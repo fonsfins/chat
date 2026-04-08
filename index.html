@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Chat — Full Realtime</title>
+    <title>Secure Chat with Realtime & Media</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
@@ -143,22 +143,30 @@
 
 <script>
     (function(){
-        // Используем прямой URL Supabase, чтобы обойти проблемы воркера
+        // ==================== КОНФИГУРАЦИЯ ====================
         const SUPABASE_URL = 'https://visizgpiszvmetydldeo.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_MP_XcGnCETIZB-2p6S4gHw_9L4PQCw0';
         
-        // Создаём клиент БЕЗ дополнительных опций, которые могут ломать WebSocket
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Создаём клиент с явным указанием транспорта и публикации
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            realtime: {
+                transport: 'websocket',
+                params: {
+                    eventsPerSecond: 10
+                }
+            }
+        });
         
+        // ==================== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ====================
         let currentUser = null;
         let currentProfile = null;
         let activeChat = null;
         let chatsList = [];
-        let realtimeChannel = null;
+        let messageChannel = null;
         let isLoginMode = false;
         let db;
         
-        // DOM элементы
+        // ==================== DOM ЭЛЕМЕНТЫ ====================
         const authModal = document.getElementById('auth-modal');
         const authForm = document.getElementById('auth-form');
         const authErrorDiv = document.getElementById('auth-error');
@@ -196,7 +204,7 @@
         const toggleDebugBtn = document.getElementById('toggle-debug-btn');
         let debugMinimized = false;
         
-        // Инициализация IndexedDB
+        // ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
         async function initDB() {
             db = await idb.openDB('chat-cache', 1, {
                 upgrade(db) {
@@ -207,7 +215,6 @@
         }
         initDB();
         
-        // Логирование
         function log(msg, type='info') {
             console.log(msg);
             if (!debugContent) return;
@@ -248,7 +255,6 @@
         async function cacheFile(storagePath, blob) {
             if (!db) await initDB();
             await db.put('files', blob, storagePath);
-            log(`Файл ${storagePath} сохранён в кеш`);
         }
         
         async function getCachedFile(storagePath) {
@@ -256,7 +262,7 @@
             return await db.get('files', storagePath);
         }
         
-        // Аутентификация
+        // ==================== АУТЕНТИФИКАЦИЯ ====================
         async function checkSession() {
             log('Проверка сессии...');
             authTitle.textContent = 'Загрузка...';
@@ -266,12 +272,10 @@
                 const { data: { session }, error } = await supabase.auth.getSession();
                 if (error) throw error;
                 if (session?.user) {
-                    log(`Сессия найдена: ${session.user.id}`);
                     currentUser = session.user;
                     await loadProfile(currentUser.id);
                     showApp();
                 } else {
-                    log('Сессия отсутствует');
                     showAuthForm();
                 }
             } catch (e) {
@@ -281,7 +285,6 @@
         }
         
         async function loadProfile(userId) {
-            log(`Загрузка профиля для ${userId}`);
             const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
             if (error) throw error;
             if (!data) throw new Error('Профиль не найден');
@@ -341,7 +344,6 @@
                         options: { data: { nickname } }
                     });
                     if (error) throw error;
-                    log('Ждём триггер...');
                     await new Promise(r => setTimeout(r, 1000));
                     const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
                     if (loginError) throw loginError;
@@ -361,7 +363,7 @@
             location.reload();
         });
         
-        // Чаты
+        // ==================== ЧАТЫ ====================
         async function loadChats() {
             chatListDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Загрузка чатов...</div>';
             try {
@@ -443,16 +445,13 @@
             if (newChatInput.value.trim()) createChat(newChatInput.value.trim());
         });
         
-        // Сообщения и Realtime
+        // ==================== СООБЩЕНИЯ И ФАЙЛЫ ====================
         async function selectChat(chatId, otherId, otherNickname) {
             log(`Выбран чат ${chatId} с ${otherNickname}`);
-            
-            // Отписываемся от предыдущего канала
-            if (realtimeChannel) {
-                supabase.removeChannel(realtimeChannel);
-                realtimeChannel = null;
+            if (messageChannel) {
+                supabase.removeChannel(messageChannel);
+                messageChannel = null;
             }
-            
             activeChat = { id: chatId, otherUserId: otherId, otherUserNickname: otherNickname };
             activeChatName.textContent = otherNickname;
             activeChatIdDisplay.textContent = `Chat ID: ${chatId}`;
@@ -461,14 +460,13 @@
             messageInput.disabled = false;
             sendBtn.disabled = false;
             renderChatList();
-            
             await loadMessages(chatId);
             setupRealtime(chatId);
             messageInput.focus();
         }
         
         async function loadMessages(chatId) {
-            messagesContainer.innerHTML = '<div class="text-center text-gray-500 py-10">Загрузка сообщений...</div>';
+            messagesContainer.innerHTML = '<div class="text-center text-gray-500 py-10">Загрузка...</div>';
             try {
                 const [messagesRes, filesRes] = await Promise.all([
                     supabase.from('messages').select(`id, content, created_at, sender_id, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at', { ascending: true }),
@@ -479,20 +477,19 @@
                 
                 const messages = messagesRes.data || [];
                 const files = filesRes.data || [];
-                
                 log(`Загружено ${messages.length} сообщений и ${files.length} файлов`);
-                renderAllMessages(messages, files);
+                renderMessagesAndFiles(messages, files);
             } catch (e) {
                 errorLog('Ошибка загрузки: ' + e.message);
                 messagesContainer.innerHTML = '<div class="text-center text-red-400 py-10">Ошибка загрузки</div>';
             }
         }
         
-        function renderAllMessages(messages, files) {
+        async function renderMessagesAndFiles(messages, files) {
             messagesContainer.innerHTML = '';
             const items = [
                 ...messages.map(m => ({ ...m, type: 'message' })),
-                ...files.map(f => ({ ...f, type: 'file', created_at: f.created_at }))
+                ...files.map(f => ({ ...f, type: 'file' }))
             ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             
             if (items.length === 0) {
@@ -500,22 +497,21 @@
                 return;
             }
             
-            items.forEach(item => {
+            for (const item of items) {
                 if (item.type === 'message') {
-                    appendMessageElement(item);
+                    await renderMessageBubble(item);
                 } else {
-                    appendFileElement(item);
+                    await renderFileBubble(item);
                 }
-            });
-            scrollToBottom();
+            }
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
-        function appendMessageElement(msg) {
+        async function renderMessageBubble(msg) {
             const isOwn = msg.sender_id === currentUser.id;
             const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const div = document.createElement('div');
             div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
-            div.dataset.messageId = msg.id;
             div.innerHTML = `<div class="max-w-[75%]">
                 <div class="text-xs text-gray-400 mb-1 ${isOwn ? 'text-right' : ''}">${msg.sender.nickname} • ${time}</div>
                 <div class="rounded-2xl px-4 py-2 ${isOwn ? 'bg-blue-600' : 'bg-gray-700'} break-words">${escapeHtml(msg.content)}</div>
@@ -523,15 +519,14 @@
             messagesContainer.appendChild(div);
         }
         
-        async function appendFileElement(file) {
+        async function renderFileBubble(file) {
             const isOwn = file.uploaded_by === currentUser.id;
             const time = new Date(file.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const div = document.createElement('div');
             div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
-            div.dataset.fileId = file.id;
             
+            const fileUrl = `${SUPABASE_URL}/storage/v1/object/chat-files/${file.storage_path}`;
             let mediaHtml = '';
-            const fileUrl = `${SUPABASE_URL}/storage/v1/object/public/chat-files/${file.storage_path}`;
             
             if (file.is_image) {
                 mediaHtml = `<img src="${fileUrl}" alt="${file.filename}" class="media-preview" style="max-height: 300px;" loading="lazy" onclick="window.open('${fileUrl}', '_blank')">`;
@@ -557,12 +552,7 @@
             messagesContainer.appendChild(div);
         }
         
-        function scrollToBottom() {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-        
         window.downloadFile = async function(storagePath, filename) {
-            log(`Скачивание: ${filename}`);
             try {
                 let blob = await getCachedFile(storagePath);
                 if (!blob) {
@@ -585,52 +575,78 @@
             }
         };
         
+        // ==================== REALTIME (ключевая часть) ====================
         function setupRealtime(chatId) {
             log(`Настройка Realtime для чата ${chatId}`);
             
-            realtimeChannel = supabase
-                .channel(`chat-${chatId}`)
-                .on('postgres_changes', {
+            // Удаляем предыдущий канал
+            if (messageChannel) {
+                supabase.removeChannel(messageChannel);
+            }
+            
+            // Создаём канал с указанием публикации supabase_realtime
+            messageChannel = supabase.channel(`chat-${chatId}`, {
+                config: {
+                    broadcast: { self: true },
+                    private: false
+                }
+            });
+            
+            // Подписываемся на изменения в messages
+            messageChannel.on(
+                'postgres_changes',
+                {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'messages',
                     filter: `chat_id=eq.${chatId}`
-                }, async (payload) => {
-                    log(`Realtime: новое сообщение в чате ${chatId}`);
-                    const newMsg = payload.new;
-                    // Получаем никнейм отправителя
-                    const { data: sender } = await supabase
-                        .from('profiles')
-                        .select('nickname')
-                        .eq('id', newMsg.sender_id)
-                        .single();
-                    newMsg.sender = sender;
-                    appendMessageElement(newMsg);
-                    scrollToBottom();
-                })
-                .on('postgres_changes', {
+                },
+                (payload) => {
+                    log(`🔄 Новое сообщение в чате ${chatId}`);
+                    if (activeChat && activeChat.id === chatId) {
+                        loadMessages(chatId);
+                    }
+                }
+            );
+            
+            // Подписываемся на изменения в files
+            messageChannel.on(
+                'postgres_changes',
+                {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'files',
                     filter: `chat_id=eq.${chatId}`
-                }, (payload) => {
-                    log(`Realtime: новый файл в чате ${chatId}`);
-                    appendFileElement(payload.new);
-                    scrollToBottom();
-                })
-                .subscribe((status, err) => {
-                    if (status === 'SUBSCRIBED') {
-                        log('✅ Realtime подписка активна');
-                    } else if (status === 'CHANNEL_ERROR') {
-                        errorLog(`❌ Ошибка Realtime: ${err?.message || 'неизвестно'}`);
-                    } else if (status === 'TIMED_OUT') {
-                        errorLog('⏱️ Таймаут Realtime');
-                    } else if (status === 'CLOSED') {
-                        warnLog('Realtime канал закрыт');
+                },
+                (payload) => {
+                    log(`🔄 Новый файл в чате ${chatId}`);
+                    if (activeChat && activeChat.id === chatId) {
+                        loadMessages(chatId);
                     }
-                });
+                }
+            );
+            
+            // Подписываемся и обрабатываем статусы
+            messageChannel.subscribe((status, err) => {
+                if (status === 'SUBSCRIBED') {
+                    log('✅ Realtime подписка активна');
+                } else if (status === 'CHANNEL_ERROR') {
+                    errorLog('❌ Ошибка Realtime: ' + (err?.message || 'неизвестно'));
+                } else if (status === 'TIMED_OUT') {
+                    errorLog('⏱️ Таймаут Realtime');
+                } else if (status === 'CLOSED') {
+                    warnLog('Realtime канал закрыт, пробуем переподключиться...');
+                    // Пытаемся переподключиться через 2 секунды
+                    setTimeout(() => {
+                        if (activeChat && activeChat.id === chatId) {
+                            setupRealtime(chatId);
+                        }
+                    }, 2000);
+                }
+            });
         }
         
+        // ==================== ОТПРАВКА СООБЩЕНИЙ ====================
         sendMessageForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             if (!activeChat || !messageInput.value.trim()) return;
@@ -643,30 +659,23 @@
                 content,
                 created_at: new Date().toISOString(),
                 sender_id: currentUser.id,
-                sender: { nickname: currentProfile.nickname }
+                sender: { nickname: currentProfile.nickname },
+                type: 'message'
             };
-            appendMessageElement(tempMsg);
-            scrollToBottom();
+            await renderMessageBubble(tempMsg);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
             
             try {
-                const { error } = await supabase.from('messages').insert({
-                    chat_id: activeChat.id,
-                    sender_id: currentUser.id,
-                    content
-                });
+                const { error } = await supabase.from('messages').insert({ chat_id: activeChat.id, sender_id: currentUser.id, content });
                 if (error) throw error;
                 log('Сообщение отправлено');
-                // Realtime сам добавит подтверждённое сообщение, удалим временное при следующей загрузке?
-                // Чтобы избежать дублей, можно удалить временное по приходу реального, но проще дождаться Realtime.
             } catch (e) {
                 errorLog('Ошибка отправки: ' + e.message);
-                // Удаляем временное сообщение при ошибке
-                const tempEl = document.querySelector(`[data-message-id="${tempMsg.id}"]`);
-                if (tempEl) tempEl.remove();
+                loadMessages(activeChat.id);
             }
         });
         
-        // Загрузка файлов
+        // ==================== ЗАГРУЗКА ФАЙЛОВ ====================
         fileUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -690,7 +699,12 @@
                 const safeName = `${currentUser.id}_${timestamp}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
                 const storagePath = `${activeChat.id}/${safeName}`;
                 
-                const { error: uploadError } = await supabase.storage.from('chat-files').upload(storagePath, processedFile);
+                const { error: uploadError } = await supabase.storage
+                    .from('chat-files')
+                    .upload(storagePath, processedFile, {
+                        cacheControl: '3600',
+                        upsert: false
+                    });
                 if (uploadError) throw uploadError;
                 
                 await cacheFile(storagePath, processedFile);
@@ -706,9 +720,8 @@
                 }).select().single();
                 if (dbError) throw dbError;
                 
-                // Оптимистичное отображение
-                appendFileElement(fileData);
-                scrollToBottom();
+                await renderFileBubble(fileData);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 
                 uploadStatus.textContent = 'Файл отправлен!';
                 setTimeout(() => uploadStatus.classList.add('hidden'), 2000);
@@ -721,7 +734,7 @@
             }
         });
         
-        // Дебаг-консоль
+        // ==================== ДЕБАГ-КОНСОЛЬ ====================
         clearDebugBtn.addEventListener('click', () => debugContent.innerHTML = '');
         toggleDebugBtn.addEventListener('click', () => {
             debugMinimized = !debugMinimized;
@@ -734,22 +747,7 @@
             toggleDebugBtn.textContent = debugMinimized ? '□' : '_';
         });
         
-        // Тест WebSocket (информационный)
-        (function testWebSocket() {
-            log('Тестируем WebSocket соединение...');
-            const wsUrl = `${SUPABASE_URL}/realtime/v1/websocket?apikey=${SUPABASE_ANON_KEY}`.replace('http', 'ws');
-            log(`Попытка подключения к: ${wsUrl}`);
-            const testWs = new WebSocket(wsUrl);
-            testWs.onopen = () => {
-                log('✅ WebSocket тест: соединение установлено успешно');
-                testWs.close();
-            };
-            testWs.onerror = () => {
-                errorLog('❌ WebSocket тест: ошибка соединения');
-            };
-        })();
-        
-        // Запуск
+        // ==================== ЗАПУСК ====================
         checkSession();
         log('Приложение готово. Используется URL: ' + SUPABASE_URL);
     })();
