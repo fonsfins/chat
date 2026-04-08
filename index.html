@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Chat</title>
+    <title>Secure Chat - Debug Realtime</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
@@ -129,27 +129,33 @@
     </div>
 </div>
 
-<!-- Дебаг-консоль -->
-<div id="debug-console" class="fixed bottom-4 right-4 w-96 bg-black bg-opacity-95 text-green-400 text-xs font-mono rounded-lg border border-gray-700 shadow-xl transition-all duration-200 z-50" style="max-height: 300px;">
+<!-- Дебаг-консоль (всегда видна, максимум инфы) -->
+<div id="debug-console" class="fixed bottom-4 right-4 w-[500px] bg-black bg-opacity-95 text-green-400 text-xs font-mono rounded-lg border border-gray-700 shadow-xl transition-all duration-200 z-50" style="max-height: 400px;">
     <div class="flex justify-between items-center p-2 bg-gray-800 rounded-t-lg cursor-pointer" id="debug-header">
-        <span class="font-bold">🐞 Debug Console</span>
+        <span class="font-bold">🐞 Debug Console (ошибки показываются красным)</span>
         <div class="flex space-x-1">
             <button id="clear-debug-btn" class="text-gray-400 hover:text-white px-2 py-0.5 text-xs bg-gray-700 rounded">Clear</button>
             <button id="toggle-debug-btn" class="text-gray-400 hover:text-white px-2 py-0.5 text-xs bg-gray-700 rounded">_</button>
         </div>
     </div>
-    <div id="debug-content" class="p-2 overflow-y-auto" style="max-height: 250px;"></div>
+    <div id="debug-content" class="p-2 overflow-y-auto" style="max-height: 350px;"></div>
 </div>
 
 <script>
     (function(){
-        const SUPABASE_URL = 'https://my-proxy-chat.wodaphone1337.workers.dev';
+        // === КОНФИГУРАЦИЯ ===
+        // Для теста можно временно переключиться на прямой URL Supabase, чтобы исключить проблемы с Worker
+        const USE_DIRECT_SUPABASE = true; // поставь true для теста без Worker
+        const SUPABASE_URL = USE_DIRECT_SUPABASE 
+            ? 'https://visizgpiszvmetydldeo.supabase.co'
+            : 'https://my-proxy-chat.wodaphone1337.workers.dev';
         const SUPABASE_ANON_KEY = 'sb_publishable_MP_XcGnCETIZB-2p6S4gHw_9L4PQCw0';
         
-        // Создаём клиент с явным указанием транспорта WebSocket
+        // Создаём клиент
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
             realtime: {
-                transport: 'websocket'
+                transport: 'websocket',
+                timeout: 60000
             }
         });
         
@@ -199,7 +205,53 @@
         const toggleDebugBtn = document.getElementById('toggle-debug-btn');
         let debugMinimized = false;
         
-        // Инициализация IndexedDB
+        // === ЛОГИРОВАНИЕ ===
+        function log(msg, type='info') {
+            console.log(msg);
+            if (!debugContent) return;
+            const entry = document.createElement('div');
+            entry.className = `mb-1 ${type==='error'?'text-red-400':type==='warn'?'text-yellow-400':type==='success'?'text-green-300':'text-green-400'}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            debugContent.appendChild(entry);
+            if (!debugMinimized) debugContent.scrollTop = debugContent.scrollHeight;
+            while (debugContent.children.length > 200) debugContent.removeChild(debugContent.children[0]);
+        }
+        
+        function errorLog(msg) { log(msg, 'error'); }
+        function warnLog(msg) { log(msg, 'warn'); }
+        function successLog(msg) { log(msg, 'success'); }
+        
+        // === ТЕСТ WEBSOCKET ===
+        async function testWebSocketConnection() {
+            log('Тестируем WebSocket соединение...');
+            const wsUrl = SUPABASE_URL.replace('https', 'wss') + '/realtime/v1/websocket?apikey=' + SUPABASE_ANON_KEY;
+            log(`Попытка подключения к: ${wsUrl}`);
+            
+            return new Promise((resolve) => {
+                const ws = new WebSocket(wsUrl);
+                const timeout = setTimeout(() => {
+                    ws.close();
+                    errorLog('❌ WebSocket тест: таймаут подключения');
+                    resolve(false);
+                }, 5000);
+                
+                ws.onopen = () => {
+                    clearTimeout(timeout);
+                    successLog('✅ WebSocket тест: соединение установлено успешно');
+                    ws.close();
+                    resolve(true);
+                };
+                
+                ws.onerror = (e) => {
+                    clearTimeout(timeout);
+                    errorLog('❌ WebSocket тест: ошибка соединения');
+                    console.error('WebSocket error:', e);
+                    resolve(false);
+                };
+            });
+        }
+        
+        // === ИНИЦИАЛИЗАЦИЯ IndexedDB ===
         async function initDB() {
             db = await idb.openDB('chat-cache', 1, {
                 upgrade(db) {
@@ -208,23 +260,8 @@
             });
             log('IndexedDB инициализирована');
         }
-        initDB();
         
-        // Логирование
-        function log(msg, type='info') {
-            console.log(msg);
-            if (!debugContent) return;
-            const entry = document.createElement('div');
-            entry.className = `mb-1 ${type==='error'?'text-red-400':type==='warn'?'text-yellow-400':'text-green-400'}`;
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            debugContent.appendChild(entry);
-            if (!debugMinimized) debugContent.scrollTop = debugContent.scrollHeight;
-            while (debugContent.children.length > 100) debugContent.removeChild(debugContent.children[0]);
-        }
-        
-        function errorLog(msg) { log(msg, 'error'); }
-        function warnLog(msg) { log(msg, 'warn'); }
-        
+        // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
         function showGlobalLoader(show=true, text='Загрузка...') {
             globalLoaderText.textContent = text;
             globalLoader.classList.toggle('hidden', !show);
@@ -251,7 +288,6 @@
         async function cacheFile(storagePath, blob) {
             if (!db) await initDB();
             await db.put('files', blob, storagePath);
-            log(`Файл ${storagePath} сохранён в кеш`);
         }
         
         async function getCachedFile(storagePath) {
@@ -259,7 +295,7 @@
             return await db.get('files', storagePath);
         }
         
-        // Аутентификация
+        // === АУТЕНТИФИКАЦИЯ ===
         async function checkSession() {
             log('Проверка сессии...');
             authTitle.textContent = 'Загрузка...';
@@ -364,7 +400,7 @@
             location.reload();
         });
         
-        // Чаты
+        // === ЧАТЫ ===
         async function loadChats() {
             chatListDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Загрузка чатов...</div>';
             try {
@@ -446,7 +482,7 @@
             if (newChatInput.value.trim()) createChat(newChatInput.value.trim());
         });
         
-        // Сообщения
+        // === СООБЩЕНИЯ ===
         async function selectChat(chatId, otherId, otherNickname) {
             log(`Выбран чат ${chatId} с ${otherNickname}`);
             if (messageSubscription) {
@@ -579,15 +615,16 @@
             }
         };
         
+        // === REALTIME ПОДПИСКА С МАКСИМАЛЬНОЙ ДИАГНОСТИКОЙ ===
         function subscribeToMessages(chatId) {
-            log(`Подписка на Realtime для чата ${chatId}`);
+            log(`Настройка Realtime для чата ${chatId}`);
             
             // Удаляем старый канал
             if (messageSubscription) {
                 supabase.removeChannel(messageSubscription);
             }
             
-            // Создаём новый канал
+            // Создаём канал с подробными колбэками
             messageSubscription = supabase
                 .channel(`chat-${chatId}`, {
                     config: {
@@ -600,7 +637,8 @@
                     table: 'messages', 
                     filter: `chat_id=eq.${chatId}` 
                 }, (payload) => {
-                    log(`Новое сообщение в чате ${chatId}`);
+                    successLog(`🔥 Realtime: новое сообщение в чате ${chatId}`);
+                    console.log('Payload:', payload);
                     if (activeChat && activeChat.id === chatId) {
                         loadMessages(chatId);
                     }
@@ -611,21 +649,21 @@
                     table: 'files', 
                     filter: `chat_id=eq.${chatId}` 
                 }, (payload) => {
-                    log(`Новый файл в чате ${chatId}`);
+                    successLog(`🔥 Realtime: новый файл в чате ${chatId}`);
                     if (activeChat && activeChat.id === chatId) {
                         loadMessages(chatId);
                     }
                 })
                 .subscribe((status, err) => {
                     if (status === 'SUBSCRIBED') {
-                        log('✅ Realtime подключен');
+                        successLog('✅ Realtime успешно подписан');
                     } else if (status === 'CHANNEL_ERROR') {
-                        errorLog('❌ Ошибка Realtime. Проверьте, что Cloudflare Worker обновлён и поддерживает WebSocket.');
-                        if (err) errorLog('Детали: ' + JSON.stringify(err));
+                        errorLog('❌ Realtime CHANNEL_ERROR');
+                        if (err) errorLog('Ошибка: ' + JSON.stringify(err));
                     } else if (status === 'TIMED_OUT') {
-                        errorLog('⏱️ Таймаут подключения Realtime');
+                        errorLog('⏱️ Realtime TIMED_OUT');
                     } else if (status === 'CLOSED') {
-                        warnLog('Realtime соединение закрыто');
+                        warnLog('Realtime CLOSED');
                     } else {
                         log(`Realtime статус: ${status}`);
                     }
@@ -653,13 +691,14 @@
             try {
                 const { error } = await supabase.from('messages').insert({ chat_id: activeChat.id, sender_id: currentUser.id, content });
                 if (error) throw error;
+                log('Сообщение отправлено');
             } catch (e) {
                 displayError('Ошибка отправки', e);
                 loadMessages(activeChat.id);
             }
         });
         
-        // Загрузка файлов
+        // === ЗАГРУЗКА ФАЙЛОВ ===
         fileUpload.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -713,7 +752,7 @@
             }
         });
         
-        // Дебаг-консоль
+        // === ДЕБАГ-КОНСОЛЬ УПРАВЛЕНИЕ ===
         clearDebugBtn.addEventListener('click', () => debugContent.innerHTML = '');
         toggleDebugBtn.addEventListener('click', () => {
             debugMinimized = !debugMinimized;
@@ -726,9 +765,13 @@
             toggleDebugBtn.textContent = debugMinimized ? '□' : '_';
         });
         
-        // Запуск
-        checkSession();
-        log('Приложение готово');
+        // === ЗАПУСК ===
+        (async () => {
+            await initDB();
+            await testWebSocketConnection();
+            checkSession();
+            log('Приложение готово. Используется URL: ' + SUPABASE_URL);
+        })();
     })();
 </script>
 </body>
