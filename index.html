@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Chat with Media</title>
+    <title>Secure Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
@@ -146,7 +146,12 @@
         const SUPABASE_URL = 'https://my-proxy-chat.wodaphone1337.workers.dev';
         const SUPABASE_ANON_KEY = 'sb_publishable_MP_XcGnCETIZB-2p6S4gHw_9L4PQCw0';
         
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // Создаём клиент с явным указанием транспорта WebSocket
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            realtime: {
+                transport: 'websocket'
+            }
+        });
         
         let currentUser = null;
         let currentProfile = null;
@@ -154,7 +159,7 @@
         let chatsList = [];
         let messageSubscription = null;
         let isLoginMode = false;
-        let db; // IndexedDB
+        let db;
         
         // DOM элементы
         const authModal = document.getElementById('auth-modal');
@@ -243,7 +248,6 @@
             return div.innerHTML;
         }
         
-        // Кеширование файла
         async function cacheFile(storagePath, blob) {
             if (!db) await initDB();
             await db.put('files', blob, storagePath);
@@ -486,7 +490,6 @@
         async function renderMessages(messages, files) {
             messagesContainer.innerHTML = '';
             
-            // Объединяем сообщения и файлы по времени
             const items = [
                 ...messages.map(m => ({ ...m, type: 'message' })),
                 ...files.map(f => ({ ...f, type: 'file', created_at: f.created_at }))
@@ -543,7 +546,7 @@
             }
             
             div.innerHTML = `<div class="max-w-[75%]">
-                <div class="text-xs text-gray-400 mb-1 ${isOwn ? 'text-right' : ''}">${file.uploaded_by === currentUser.id ? 'Вы' : activeChat.otherUserNickname} • ${time}</div>
+                <div class="text-xs text-gray-400 mb-1 ${isOwn ? 'text-right' : ''}">${isOwn ? 'Вы' : activeChat.otherUserNickname} • ${time}</div>
                 <div class="rounded-2xl px-4 py-2 ${isOwn ? 'bg-blue-600' : 'bg-gray-700'}">
                     ${mediaHtml}
                     <div class="text-xs text-gray-300 mt-1">${file.filename}</div>
@@ -578,20 +581,54 @@
         
         function subscribeToMessages(chatId) {
             log(`Подписка на Realtime для чата ${chatId}`);
+            
+            // Удаляем старый канал
+            if (messageSubscription) {
+                supabase.removeChannel(messageSubscription);
+            }
+            
+            // Создаём новый канал
             messageSubscription = supabase
-                .channel(`chat-${chatId}`)
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, () => {
-                    log(`Изменения в чате ${chatId}`);
-                    if (activeChat && activeChat.id === chatId) loadMessages(chatId);
+                .channel(`chat-${chatId}`, {
+                    config: {
+                        broadcast: { self: true },
+                    },
                 })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'files', filter: `chat_id=eq.${chatId}` }, () => {
+                .on('postgres_changes', { 
+                    event: 'INSERT', 
+                    schema: 'public', 
+                    table: 'messages', 
+                    filter: `chat_id=eq.${chatId}` 
+                }, (payload) => {
+                    log(`Новое сообщение в чате ${chatId}`);
+                    if (activeChat && activeChat.id === chatId) {
+                        loadMessages(chatId);
+                    }
+                })
+                .on('postgres_changes', { 
+                    event: 'INSERT', 
+                    schema: 'public', 
+                    table: 'files', 
+                    filter: `chat_id=eq.${chatId}` 
+                }, (payload) => {
                     log(`Новый файл в чате ${chatId}`);
-                    if (activeChat && activeChat.id === chatId) loadMessages(chatId);
+                    if (activeChat && activeChat.id === chatId) {
+                        loadMessages(chatId);
+                    }
                 })
-                .subscribe((status) => {
-                    if (status === 'SUBSCRIBED') log('✅ Realtime активен');
-                    else if (status === 'CHANNEL_ERROR') errorLog('❌ Ошибка Realtime. Проверь настройки Supabase (Database → Replication → включить messages)');
-                    else log(`Realtime статус: ${status}`);
+                .subscribe((status, err) => {
+                    if (status === 'SUBSCRIBED') {
+                        log('✅ Realtime подключен');
+                    } else if (status === 'CHANNEL_ERROR') {
+                        errorLog('❌ Ошибка Realtime. Проверьте, что Cloudflare Worker обновлён и поддерживает WebSocket.');
+                        if (err) errorLog('Детали: ' + JSON.stringify(err));
+                    } else if (status === 'TIMED_OUT') {
+                        errorLog('⏱️ Таймаут подключения Realtime');
+                    } else if (status === 'CLOSED') {
+                        warnLog('Realtime соединение закрыто');
+                    } else {
+                        log(`Realtime статус: ${status}`);
+                    }
                 });
         }
         
@@ -618,7 +655,7 @@
                 if (error) throw error;
             } catch (e) {
                 displayError('Ошибка отправки', e);
-                loadMessages(activeChat.id); // Перезагружаем, чтобы убрать временное сообщение
+                loadMessages(activeChat.id);
             }
         });
         
@@ -649,7 +686,6 @@
                 const { error: uploadError } = await supabase.storage.from('chat-files').upload(storagePath, processedFile);
                 if (uploadError) throw uploadError;
                 
-                // Кешируем файл сразу
                 await cacheFile(storagePath, processedFile);
                 
                 const { data: fileData, error: dbError } = await supabase.from('files').insert({
@@ -663,7 +699,6 @@
                 }).select().single();
                 if (dbError) throw dbError;
                 
-                // Оптимистичное отображение
                 await renderFileItem(fileData);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 
