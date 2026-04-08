@@ -2,398 +2,310 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Chat — Full Realtime</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Minimal Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/idb@7.1.1/build/umd.js"></script>
     <style>
+        * { transition: background-color 0.2s ease, border-color 0.2s ease; }
         .scrollbar-hidden::-webkit-scrollbar { display: none; }
         .scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .animate-spin { animation: spin 1s linear infinite; }
-        .debug-minimized { height: 28px !important; overflow: hidden !important; }
-        .media-preview { max-width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
-        video, audio { max-width: 100%; border-radius: 0.5rem; margin-top: 0.5rem; }
+        .theme-transition { transition: all 0.2s ease; }
     </style>
 </head>
-<body class="bg-gray-900 text-white font-sans antialiased">
+<body class="font-sans antialiased">
 
-<!-- Глобальный лоадер -->
-<div id="global-loader" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 hidden">
-    <div class="bg-gray-800 rounded-lg p-6 flex items-center space-x-3">
-        <svg class="animate-spin h-6 w-6 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+<div id="app" class="h-screen flex overflow-hidden bg-white dark:bg-black text-black dark:text-white">
+    
+    <!-- Бургер-кнопка (видна на мобильных/планшетах) -->
+    <button id="menu-toggle" class="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-full bg-gray-200 dark:bg-gray-800">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
         </svg>
-        <span id="global-loader-text">Загрузка...</span>
-    </div>
-</div>
-
-<!-- Основной интерфейс -->
-<div id="app" class="flex h-screen max-w-6xl mx-auto bg-gray-800 shadow-2xl overflow-hidden">
-    <!-- Сайдбар -->
-    <div id="sidebar" class="w-1/3 bg-gray-850 border-r border-gray-700 flex flex-col">
-        <div class="p-4 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+    </button>
+    
+    <!-- Сайдбар (чаты) -->
+    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 ease-in-out lg:translate-x-0 -translate-x-full">
+        <!-- Заголовок сайдбара -->
+        <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center justify-between">
             <div>
-                <h2 class="font-bold text-lg" id="user-nickname-display">Чаты</h2>
-                <span id="user-id-display" class="text-xs text-gray-400"></span>
+                <h2 class="font-semibold text-lg" id="user-nickname-display">Чаты</h2>
+                <span id="user-id-display" class="text-xs opacity-60"></span>
             </div>
-            <button id="logout-btn" class="text-sm bg-red-600 hover:bg-red-700 px-3 py-1.5 rounded transition hidden">Выйти</button>
+            <div class="flex items-center space-x-2">
+                <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
+                    <svg id="theme-icon-light" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <svg id="theme-icon-dark" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                </button>
+                <button id="logout-btn" class="text-sm px-3 py-1.5 rounded-full bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 hidden">Выйти</button>
+            </div>
         </div>
 
-        <div class="p-3 border-b border-gray-700">
+        <!-- Форма добавления чата -->
+        <div class="p-3 border-b border-gray-300 dark:border-gray-800">
             <form id="add-chat-form" class="flex space-x-2">
-                <input type="text" id="new-chat-input" placeholder="Ник или ID друга" class="flex-1 bg-gray-700 text-sm text-white px-3 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button type="submit" id="add-chat-btn" class="bg-blue-600 hover:bg-blue-700 text-sm px-4 py-2 rounded transition flex items-center">
-                    <span>+ Добавить</span>
-                    <svg class="hidden animate-spin ml-2 h-4 w-4 text-white" id="add-chat-spinner" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                <input type="text" id="new-chat-input" placeholder="Ник или ID" class="flex-1 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
+                <button type="submit" id="add-chat-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium hover:opacity-80 transition">
+                    <span>+</span>
                 </button>
             </form>
         </div>
 
-        <div id="chat-list-container" class="flex-1 overflow-y-auto scrollbar-hidden p-2">
+        <!-- Список чатов -->
+        <div class="flex-1 overflow-y-auto scrollbar-hidden p-2">
             <div id="chat-list" class="space-y-1">
-                <div class="text-center text-gray-500 py-10">Загрузка чатов...</div>
+                <div class="text-center opacity-50 py-10">Загрузка...</div>
             </div>
         </div>
     </div>
 
-    <!-- Область чата -->
-    <div id="chat-area" class="w-2/3 flex flex-col bg-gray-800">
-        <div id="no-chat-selected" class="flex-1 flex items-center justify-center text-gray-500">
-            <p>Выберите чат или добавьте друга</p>
+    <!-- Основная область чата -->
+    <div class="flex-1 flex flex-col bg-white dark:bg-black">
+        <!-- Заголовок активного чата -->
+        <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center">
+            <button id="mobile-back-btn" class="lg:hidden mr-3 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 hidden">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            <div>
+                <h3 id="active-chat-name" class="font-semibold text-lg"></h3>
+                <span id="active-chat-id-display" class="text-xs opacity-60"></span>
+            </div>
         </div>
 
-        <div id="active-chat-view" class="flex-1 flex flex-col h-full hidden">
-            <div class="p-4 bg-gray-800 border-b border-gray-700 flex items-center">
-                <div>
-                    <h3 id="active-chat-name" class="font-bold text-lg"></h3>
-                    <span id="active-chat-id-display" class="text-xs text-gray-400"></span>
-                </div>
+        <!-- Сообщения -->
+        <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hidden">
+            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">
+                Выберите чат
             </div>
+        </div>
 
-            <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
-
-            <div class="p-4 bg-gray-800 border-t border-gray-700">
-                <form id="send-message-form" class="flex items-center space-x-2">
-                    <input type="text" id="message-input" placeholder="Введите сообщение..." class="flex-1 bg-gray-700 text-white px-4 py-3 rounded-full border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500" autocomplete="off" disabled>
-                    <label for="file-upload" class="cursor-pointer bg-gray-700 hover:bg-gray-600 p-3 rounded-full transition">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                        </svg>
-                        <input type="file" id="file-upload" class="hidden">
-                    </label>
-                    <button type="submit" id="send-btn" class="bg-blue-600 hover:bg-blue-700 p-3 rounded-full transition disabled:opacity-50" disabled>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-                        </svg>
-                    </button>
-                </form>
-                <div id="upload-status" class="text-xs text-gray-400 mt-2 hidden"></div>
-            </div>
+        <!-- Форма отправки -->
+        <div class="p-4 border-t border-gray-300 dark:border-gray-800">
+            <form id="send-message-form" class="flex items-center space-x-2">
+                <input type="text" id="message-input" placeholder="Сообщение..." class="flex-1 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3 focus:outline-none focus:ring-2 focus:ring-gray-400" autocomplete="off" disabled>
+                <label for="file-upload" class="cursor-pointer p-3 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
+                    <input type="file" id="file-upload" class="hidden">
+                </label>
+                <button type="submit" id="send-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full p-3 hover:opacity-80 transition disabled:opacity-30" disabled>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                </button>
+            </form>
+            <div id="upload-status" class="text-xs opacity-50 mt-2 hidden"></div>
         </div>
     </div>
 </div>
 
 <!-- Модальное окно аутентификации -->
-<div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
-    <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+<div id="auth-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+    <div class="bg-white dark:bg-gray-900 rounded-3xl shadow-xl w-full max-w-md p-6">
         <h2 id="auth-modal-title" class="text-2xl font-bold mb-6 text-center">Загрузка...</h2>
-        <div id="auth-error" class="mb-4 bg-red-900/50 border border-red-700 rounded p-3 text-sm overflow-auto max-h-40 hidden"></div>
+        <div id="auth-error" class="mb-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl p-3 text-sm hidden"></div>
         <form id="auth-form" class="space-y-4 hidden">
-            <div>
-                <label for="auth-nickname" class="block text-sm font-medium text-gray-300 mb-1">Никнейм</label>
-                <input type="text" id="auth-nickname" name="nickname" required minlength="3" maxlength="20" class="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
-            <div>
-                <label for="auth-password" class="block text-sm font-medium text-gray-300 mb-1">Пароль</label>
-                <input type="password" id="auth-password" name="password" required minlength="6" class="w-full bg-gray-700 text-white px-3 py-2 rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
-            </div>
+            <input type="text" id="auth-nickname" placeholder="Никнейм" required minlength="3" maxlength="20" class="w-full bg-gray-100 dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3">
+            <input type="password" id="auth-password" placeholder="Пароль" required minlength="6" class="w-full bg-gray-100 dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3">
             <div class="flex justify-between items-center pt-2">
-                <button type="button" id="switch-auth-mode" class="text-blue-400 hover:text-blue-300 text-sm">↻ Войти</button>
-                <button type="submit" id="auth-submit-btn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded transition">Зарегистрироваться</button>
+                <button type="button" id="switch-auth-mode" class="text-sm opacity-70 hover:opacity-100">↻ Войти</button>
+                <button type="submit" id="auth-submit-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-6 py-2 font-medium">Регистрация</button>
             </div>
         </form>
         <div id="auth-loading" class="text-center py-8">
-            <svg class="animate-spin h-8 w-8 mx-auto text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p class="mt-2 text-gray-300">Проверка сессии...</p>
+            <div class="inline-block w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+            <p class="mt-2 opacity-70">Проверка сессии...</p>
         </div>
     </div>
 </div>
 
-<!-- Дебаг-консоль -->
-<div id="debug-console" class="fixed bottom-4 right-4 w-96 bg-black bg-opacity-95 text-green-400 text-xs font-mono rounded-lg border border-gray-700 shadow-xl transition-all duration-200 z-50" style="max-height: 300px;">
-    <div class="flex justify-between items-center p-2 bg-gray-800 rounded-t-lg cursor-pointer" id="debug-header">
-        <span class="font-bold">🐞 Debug Console</span>
-        <div class="flex space-x-1">
-            <button id="clear-debug-btn" class="text-gray-400 hover:text-white px-2 py-0.5 text-xs bg-gray-700 rounded">Clear</button>
-            <button id="toggle-debug-btn" class="text-gray-400 hover:text-white px-2 py-0.5 text-xs bg-gray-700 rounded">_</button>
-        </div>
+<!-- Дебаг-консоль (скрыта, показывается по клавише D) -->
+<div id="debug-console" class="fixed bottom-4 right-4 w-96 bg-black/90 text-green-400 text-xs font-mono rounded-xl border border-gray-700 shadow-xl z-50 hidden" style="max-height: 300px;">
+    <div class="flex justify-between items-center p-2 bg-gray-800 rounded-t-xl">
+        <span>Debug</span>
+        <button id="close-debug" class="text-gray-400 hover:text-white">&times;</button>
     </div>
     <div id="debug-content" class="p-2 overflow-y-auto" style="max-height: 250px;"></div>
 </div>
 
 <script>
     (function(){
+        // Конфигурация
         const SUPABASE_URL = 'https://visizgpiszvmetydldeo.supabase.co';
         const SUPABASE_ANON_KEY = 'sb_publishable_MP_XcGnCETIZB-2p6S4gHw_9L4PQCw0';
-        
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        let currentUser = null;
-        let currentProfile = null;
-        let activeChat = null;
-        let chatsList = [];
-        let realtimeChannel = null;
-        let isLoginMode = false;
-        let db;
+        // Состояние
+        let currentUser = null, currentProfile = null, activeChat = null, chatsList = [], realtimeChannel = null;
+        let isLoginMode = false, db, theme = localStorage.getItem('theme') || 'dark';
         
         // DOM элементы
+        const app = document.getElementById('app');
         const authModal = document.getElementById('auth-modal');
         const authForm = document.getElementById('auth-form');
-        const authErrorDiv = document.getElementById('auth-error');
+        const authError = document.getElementById('auth-error');
         const authTitle = document.getElementById('auth-modal-title');
-        const switchAuthBtn = document.getElementById('switch-auth-mode');
-        const submitBtn = document.getElementById('auth-submit-btn');
-        const nicknameInput = document.getElementById('auth-nickname');
-        const passwordInput = document.getElementById('auth-password');
-        const authLoadingDiv = document.getElementById('auth-loading');
-        const appDiv = document.getElementById('app');
-        const logoutBtn = document.getElementById('logout-btn');
-        const userNicknameDisplay = document.getElementById('user-nickname-display');
-        const userIdDisplay = document.getElementById('user-id-display');
-        const chatListDiv = document.getElementById('chat-list');
-        const noChatSelectedDiv = document.getElementById('no-chat-selected');
-        const activeChatView = document.getElementById('active-chat-view');
-        const activeChatName = document.getElementById('active-chat-name');
-        const activeChatIdDisplay = document.getElementById('active-chat-id-display');
+        const authLoading = document.getElementById('auth-loading');
+        const sidebar = document.getElementById('sidebar');
+        const menuToggle = document.getElementById('menu-toggle');
+        const mobileBackBtn = document.getElementById('mobile-back-btn');
+        const themeToggle = document.getElementById('theme-toggle');
         const messagesContainer = document.getElementById('messages-container');
-        const sendMessageForm = document.getElementById('send-message-form');
+        const noChatMsg = document.getElementById('no-chat-message');
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
-        const addChatForm = document.getElementById('add-chat-form');
-        const newChatInput = document.getElementById('new-chat-input');
-        const addChatBtn = document.getElementById('add-chat-btn');
-        const addChatSpinner = document.getElementById('add-chat-spinner');
-        const globalLoader = document.getElementById('global-loader');
-        const globalLoaderText = document.getElementById('global-loader-text');
         const fileUpload = document.getElementById('file-upload');
         const uploadStatus = document.getElementById('upload-status');
-        
-        const debugConsoleDiv = document.getElementById('debug-console');
+        const debugConsole = document.getElementById('debug-console');
         const debugContent = document.getElementById('debug-content');
-        const clearDebugBtn = document.getElementById('clear-debug-btn');
-        const toggleDebugBtn = document.getElementById('toggle-debug-btn');
-        let debugMinimized = false;
         
-        // Инициализация IndexedDB
-        async function initDB() {
-            db = await idb.openDB('chat-cache', 1, {
-                upgrade(db) { db.createObjectStore('files'); },
-            });
-            log('IndexedDB инициализирована');
-        }
+        // Инициализация IndexedDB и темы
+        async function initDB() { db = await idb.openDB('chat-cache', 1, { upgrade(db){ db.createObjectStore('files'); }}); }
         initDB();
         
-        // Логирование
-        function log(msg, type='info') {
-            console.log(msg);
-            if (!debugContent) return;
-            const entry = document.createElement('div');
-            entry.className = `mb-1 ${type==='error'?'text-red-400':type==='warn'?'text-yellow-400':'text-green-400'}`;
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            debugContent.appendChild(entry);
-            if (!debugMinimized) debugContent.scrollTop = debugContent.scrollHeight;
-            while (debugContent.children.length > 100) debugContent.removeChild(debugContent.children[0]);
+        function applyTheme(t) {
+            theme = t;
+            localStorage.setItem('theme', t);
+            document.documentElement.classList.toggle('dark', t === 'dark');
         }
+        applyTheme(theme);
+        themeToggle.addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));
         
-        function errorLog(msg) { log(msg, 'error'); }
-        function warnLog(msg) { log(msg, 'warn'); }
+        // Логирование (только в консоль браузера)
+        function log(msg, type='info') { console.log(`[${new Date().toLocaleTimeString()}] ${msg}`); }
+        function errorLog(msg) { console.error(msg); }
         
-        function showGlobalLoader(show=true, text='Загрузка...') {
-            globalLoaderText.textContent = text;
-            globalLoader.classList.toggle('hidden', !show);
+        // Показ ошибок в модалке
+        function displayError(context, err) {
+            const msg = err?.message || JSON.stringify(err);
+            authError.textContent = `${context}: ${msg}`;
+            authError.classList.remove('hidden');
         }
+        function clearError() { authError.classList.add('hidden'); }
         
-        function displayError(context, error) {
-            const msg = error?.message || JSON.stringify(error);
-            authErrorDiv.textContent = `${context}: ${msg}`;
-            authErrorDiv.classList.remove('hidden');
-            errorLog(`ERROR ${context}: ${msg}`);
+        // Управление сайдбаром
+        function toggleSidebar(show) {
+            if (show === undefined) sidebar.classList.toggle('-translate-x-full');
+            else sidebar.classList.toggle('-translate-x-full', !show);
         }
+        menuToggle.addEventListener('click', () => toggleSidebar());
+        mobileBackBtn.addEventListener('click', () => toggleSidebar(true));
         
-        function clearAuthError() {
-            authErrorDiv.textContent = '';
-            authErrorDiv.classList.add('hidden');
-        }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-        
-        async function cacheFile(storagePath, blob) {
-            if (!db) await initDB();
-            await db.put('files', blob, storagePath);
-        }
-        
-        async function getCachedFile(storagePath) {
-            if (!db) await initDB();
-            return await db.get('files', storagePath);
-        }
+        // Закрытие сайдбара при клике вне его (на мобильных)
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth < 1024 && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+                sidebar.classList.add('-translate-x-full');
+            }
+        });
         
         // Аутентификация
         async function checkSession() {
-            log('Проверка сессии...');
             authTitle.textContent = 'Загрузка...';
-            authLoadingDiv.classList.remove('hidden');
+            authLoading.classList.remove('hidden');
             authForm.classList.add('hidden');
             try {
-                const { data: { session }, error } = await supabase.auth.getSession();
-                if (error) throw error;
+                const { data: { session } } = await supabase.auth.getSession();
                 if (session?.user) {
                     currentUser = session.user;
                     await loadProfile(currentUser.id);
                     showApp();
-                } else {
-                    showAuthForm();
-                }
-            } catch (e) {
-                displayError('Ошибка сессии', e);
-                showAuthForm();
-            }
+                } else { showAuthForm(); }
+            } catch (e) { displayError('Ошибка', e); showAuthForm(); }
         }
         
         async function loadProfile(userId) {
-            const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-            if (error) throw error;
+            const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
             if (!data) throw new Error('Профиль не найден');
             currentProfile = data;
-            userNicknameDisplay.textContent = currentProfile.nickname;
-            userIdDisplay.textContent = `ID: ${currentProfile.id}`;
-            log(`Профиль загружен: ${currentProfile.nickname}`);
+            document.getElementById('user-nickname-display').textContent = data.nickname;
+            document.getElementById('user-id-display').textContent = data.id.slice(0,8);
         }
         
         function showAuthForm() {
-            authLoadingDiv.classList.add('hidden');
+            authLoading.classList.add('hidden');
             authForm.classList.remove('hidden');
             authTitle.textContent = isLoginMode ? 'Вход' : 'Регистрация';
-            submitBtn.textContent = isLoginMode ? 'Войти' : 'Зарегистрироваться';
-            switchAuthBtn.textContent = isLoginMode ? '↻ Регистрация' : '↻ Войти';
-            clearAuthError();
+            document.getElementById('auth-submit-btn').textContent = isLoginMode ? 'Войти' : 'Зарегистрироваться';
+            document.getElementById('switch-auth-mode').textContent = isLoginMode ? '↻ Регистрация' : '↻ Войти';
+            clearError();
         }
         
         function showApp() {
             authModal.classList.add('hidden');
-            appDiv.classList.remove('hidden');
-            logoutBtn.classList.remove('hidden');
+            document.getElementById('logout-btn').classList.remove('hidden');
             loadChats();
         }
         
-        switchAuthBtn.addEventListener('click', () => {
+        document.getElementById('switch-auth-mode').addEventListener('click', ()=>{
             isLoginMode = !isLoginMode;
             showAuthForm();
         });
         
-        authForm.addEventListener('submit', async (e) => {
+        authForm.addEventListener('submit', async (e)=>{
             e.preventDefault();
-            clearAuthError();
-            const nickname = nicknameInput.value.trim();
-            const password = passwordInput.value;
-            if (!nickname || !password) {
-                displayError('Ошибка', 'Введите никнейм и пароль');
-                return;
-            }
-            log(`${isLoginMode?'Вход':'Регистрация'} для ${nickname}`);
-            showGlobalLoader(true);
+            clearError();
+            const nickname = document.getElementById('auth-nickname').value.trim();
+            const password = document.getElementById('auth-password').value;
             try {
                 if (isLoginMode) {
                     const { data: profile } = await supabase.from('profiles').select('id').eq('nickname', nickname).maybeSingle();
                     if (!profile) throw new Error('Пользователь не найден');
-                    const email = `${nickname}@temp.mail`;
-                    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                    const { data, error } = await supabase.auth.signInWithPassword({ email: `${nickname}@temp.mail`, password });
                     if (error) throw error;
                     currentUser = data.user;
                     await loadProfile(currentUser.id);
                     showApp();
                 } else {
                     const email = `${nickname}@temp.mail`;
-                    const { data, error } = await supabase.auth.signUp({
-                        email,
-                        password,
-                        options: { data: { nickname } }
-                    });
+                    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { nickname } } });
                     if (error) throw error;
-                    await new Promise(r => setTimeout(r, 1000));
-                    const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
-                    if (loginError) throw loginError;
+                    await new Promise(r=>setTimeout(r,1000));
+                    const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password });
+                    if (loginErr) throw loginErr;
                     currentUser = data.user;
                     await loadProfile(data.user.id);
                     showApp();
                 }
-            } catch (e) {
-                displayError('Ошибка', e);
-            } finally {
-                showGlobalLoader(false);
-            }
+            } catch(e) { displayError('Ошибка', e); }
         });
         
-        logoutBtn.addEventListener('click', async () => {
+        document.getElementById('logout-btn').addEventListener('click', async ()=>{
             await supabase.auth.signOut();
             location.reload();
         });
         
         // Чаты
         async function loadChats() {
-            chatListDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Загрузка чатов...</div>';
-            try {
-                const { data, error } = await supabase
-                    .from('chats')
-                    .select(`id, user1_id, user2_id, user1:profiles!chats_user1_id_fkey(nickname), user2:profiles!chats_user2_id_fkey(nickname)`)
-                    .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
-                    .order('created_at', { ascending: false });
-                if (error) throw error;
-                chatsList = data || [];
-                log(`Загружено ${chatsList.length} чатов`);
-                renderChatList();
-            } catch (e) {
-                errorLog('Ошибка загрузки чатов: ' + e.message);
-                chatListDiv.innerHTML = '<div class="text-center text-red-400 py-10">Ошибка загрузки</div>';
-            }
+            const container = document.getElementById('chat-list');
+            container.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
+            const { data, error } = await supabase
+                .from('chats')
+                .select(`id, user1_id, user2_id, user1:profiles!chats_user1_id_fkey(nickname), user2:profiles!chats_user2_id_fkey(nickname)`)
+                .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
+                .order('created_at', { ascending: false });
+            if (error) { container.innerHTML = '<div class="text-center text-red-500 py-10">Ошибка</div>'; return; }
+            chatsList = data || [];
+            renderChatList();
         }
         
         function renderChatList() {
-            if (chatsList.length === 0) {
-                chatListDiv.innerHTML = '<div class="text-center text-gray-500 py-10">Нет чатов</div>';
-                return;
-            }
+            const container = document.getElementById('chat-list');
+            if (chatsList.length === 0) { container.innerHTML = '<div class="text-center opacity-50 py-10">Нет чатов</div>'; return; }
             let html = '';
             chatsList.forEach(chat => {
                 const other = chat.user1_id === currentUser.id ? chat.user2 : chat.user1;
-                html += `<div class="chat-item p-3 rounded-lg cursor-pointer transition ${activeChat?.id===chat.id?'bg-blue-700':'bg-gray-750 hover:bg-gray-700'}" data-chat-id="${chat.id}" data-other-id="${other.id}" data-other-nickname="${other.nickname}">
+                html += `<div class="chat-item p-3 rounded-2xl cursor-pointer transition ${activeChat?.id===chat.id ? 'bg-gray-300 dark:bg-gray-800' : 'hover:bg-gray-200 dark:hover:bg-gray-900'}" data-chat-id="${chat.id}" data-other-id="${other.id}" data-other-nickname="${other.nickname}">
                     <div class="font-medium">${other.nickname}</div>
-                    <div class="text-xs text-gray-400">ID: ${chat.id}</div>
+                    <div class="text-xs opacity-50">ID: ${chat.id}</div>
                 </div>`;
             });
-            chatListDiv.innerHTML = html;
-            document.querySelectorAll('.chat-item').forEach(el => {
-                el.addEventListener('click', () => selectChat(parseInt(el.dataset.chatId), el.dataset.otherId, el.dataset.otherNickname));
-            });
+            container.innerHTML = html;
+            container.querySelectorAll('.chat-item').forEach(el => el.addEventListener('click', ()=>{
+                selectChat(parseInt(el.dataset.chatId), el.dataset.otherId, el.dataset.otherNickname);
+                if (window.innerWidth < 1024) toggleSidebar(false);
+            }));
         }
         
         async function createChat(target) {
-            addChatBtn.disabled = true;
-            addChatSpinner.classList.remove('hidden');
-            log(`Создание чата с ${target}`);
             try {
                 let profile;
                 if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) {
@@ -404,48 +316,35 @@
                     profile = data;
                 }
                 if (!profile) throw new Error('Пользователь не найден');
-                if (profile.id === currentUser.id) throw new Error('Нельзя создать чат с собой');
-                
+                if (profile.id === currentUser.id) throw new Error('Нельзя с собой');
                 const u1 = currentUser.id < profile.id ? currentUser.id : profile.id;
                 const u2 = currentUser.id < profile.id ? profile.id : currentUser.id;
-                const { data: existing } = await supabase.from('chats').select('id').eq('user1_id', u1).eq('user2_id', u2).maybeSingle();
-                if (existing) {
-                    log(`Чат уже существует: ${existing.id}`);
+                const { data: exist } = await supabase.from('chats').select('id').eq('user1_id', u1).eq('user2_id', u2).maybeSingle();
+                if (exist) {
                     await loadChats();
-                    selectChat(existing.id, profile.id, profile.nickname);
+                    selectChat(exist.id, profile.id, profile.nickname);
                 } else {
-                    const { data: newChat, error } = await supabase.from('chats').insert({ user1_id: u1, user2_id: u2 }).select().single();
-                    if (error) throw error;
-                    log(`Чат создан: ${newChat.id}`);
+                    const { data: newChat } = await supabase.from('chats').insert({ user1_id: u1, user2_id: u2 }).select().single();
                     await loadChats();
                     selectChat(newChat.id, profile.id, profile.nickname);
                 }
-                newChatInput.value = '';
-            } catch (e) {
-                displayError('Ошибка создания чата', e);
-            } finally {
-                addChatBtn.disabled = false;
-                addChatSpinner.classList.add('hidden');
-            }
+                document.getElementById('new-chat-input').value = '';
+            } catch(e) { displayError('Ошибка создания', e); }
         }
         
-        addChatForm.addEventListener('submit', (e) => {
+        document.getElementById('add-chat-form').addEventListener('submit', (e)=>{
             e.preventDefault();
-            if (newChatInput.value.trim()) createChat(newChatInput.value.trim());
+            const val = document.getElementById('new-chat-input').value.trim();
+            if (val) createChat(val);
         });
         
         // Сообщения и Realtime
         async function selectChat(chatId, otherId, otherNickname) {
-            log(`Выбран чат ${chatId} с ${otherNickname}`);
-            if (realtimeChannel) {
-                supabase.removeChannel(realtimeChannel);
-                realtimeChannel = null;
-            }
+            if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
             activeChat = { id: chatId, otherUserId: otherId, otherUserNickname: otherNickname };
-            activeChatName.textContent = otherNickname;
-            activeChatIdDisplay.textContent = `Chat ID: ${chatId}`;
-            noChatSelectedDiv.classList.add('hidden');
-            activeChatView.classList.remove('hidden');
+            document.getElementById('active-chat-name').textContent = otherNickname;
+            document.getElementById('active-chat-id-display').textContent = `ID: ${chatId}`;
+            noChatMsg.style.display = 'none';
             messageInput.disabled = false;
             sendBtn.disabled = false;
             renderChatList();
@@ -455,302 +354,168 @@
         }
         
         async function loadMessages(chatId) {
-            messagesContainer.innerHTML = '<div class="text-center text-gray-500 py-10">Загрузка сообщений...</div>';
-            try {
-                const [messagesRes, filesRes] = await Promise.all([
-                    supabase.from('messages').select(`id, content, created_at, sender_id, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at', { ascending: true }),
-                    supabase.from('files').select('*').eq('chat_id', chatId).order('created_at', { ascending: true })
-                ]);
-                if (messagesRes.error) throw messagesRes.error;
-                if (filesRes.error) throw filesRes.error;
-                
-                const messages = messagesRes.data || [];
-                const files = filesRes.data || [];
-                log(`Загружено ${messages.length} сообщений и ${files.length} файлов`);
-                renderAllMessages(messages, files);
-            } catch (e) {
-                errorLog('Ошибка загрузки: ' + e.message);
-                messagesContainer.innerHTML = '<div class="text-center text-red-400 py-10">Ошибка загрузки</div>';
-            }
+            messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
+            const [msgRes, fileRes] = await Promise.all([
+                supabase.from('messages').select(`id, content, created_at, sender_id, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at'),
+                supabase.from('files').select('*').eq('chat_id', chatId).order('created_at')
+            ]);
+            if (msgRes.error || fileRes.error) { messagesContainer.innerHTML = '<div class="text-red-500">Ошибка</div>'; return; }
+            renderAllMessages(msgRes.data, fileRes.data);
         }
         
-        async function renderAllMessages(messages, files) {
+        function renderAllMessages(messages, files) {
             messagesContainer.innerHTML = '';
-            const items = [
-                ...messages.map(m => ({ ...m, type: 'message' })),
-                ...files.map(f => ({ ...f, type: 'file', created_at: f.created_at }))
-            ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-            
-            if (items.length === 0) {
-                messagesContainer.innerHTML = '<div class="text-center text-gray-500 py-10">Нет сообщений</div>';
-                return;
-            }
-            
-            for (const item of items) {
-                if (item.type === 'message') {
-                    await appendMessageElement(item);
-                } else {
-                    await appendFileElement(item);
-                }
-            }
-            scrollToBottom();
+            const items = [...messages.map(m=>({...m, type:'msg'})), ...files.map(f=>({...f, type:'file'}))].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+            if (items.length===0) { messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Нет сообщений</div>'; return; }
+            items.forEach(item => item.type==='msg' ? appendMessageElement(item) : appendFileElement(item));
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
-        async function appendMessageElement(msg) {
+        function appendMessageElement(msg) {
             const isOwn = msg.sender_id === currentUser.id;
-            const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const time = new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
             div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
             div.dataset.messageId = msg.id;
-            div.dataset.messageContent = msg.content;
+            div.dataset.content = msg.content;
             div.dataset.senderId = msg.sender_id;
-            div.dataset.createdAt = msg.created_at;
-            div.innerHTML = `<div class="max-w-[75%]">
-                <div class="text-xs text-gray-400 mb-1 ${isOwn ? 'text-right' : ''}">${msg.sender.nickname} • ${time}</div>
-                <div class="rounded-2xl px-4 py-2 ${isOwn ? 'bg-blue-600' : 'bg-gray-700'} break-words">${escapeHtml(msg.content)}</div>
+            div.innerHTML = `<div class="max-w-[80%]">
+                <div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${msg.sender.nickname} • ${time}</div>
+                <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'}">${escapeHtml(msg.content)}</div>
             </div>`;
             messagesContainer.appendChild(div);
         }
         
         async function appendFileElement(file) {
             const isOwn = file.uploaded_by === currentUser.id;
-            const time = new Date(file.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const time = new Date(file.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
             div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
             div.dataset.fileId = file.id;
-            div.dataset.storagePath = file.storage_path;
             
-            // Получаем подписанный URL для доступа к приватному файлу
             let signedUrl = '';
             try {
-                const { data, error } = await supabase.storage.from('chat-files').createSignedUrl(file.storage_path, 3600);
-                if (error) throw error;
+                const { data } = await supabase.storage.from('chat-files').createSignedUrl(file.storage_path, 3600);
                 signedUrl = data.signedUrl;
-            } catch (e) {
-                errorLog('Ошибка получения ссылки на файл: ' + e.message);
-                signedUrl = '#'; // fallback
-            }
+            } catch(e) { console.warn('Signed URL error:', e); signedUrl = '#'; }
             
             let mediaHtml = '';
-            if (file.is_image) {
-                mediaHtml = `<img src="${signedUrl}" alt="${file.filename}" class="media-preview" style="max-height: 300px;" loading="lazy" onclick="window.open('${signedUrl}', '_blank')">`;
-            } else if (file.mime_type?.startsWith('video/')) {
-                mediaHtml = `<video controls class="media-preview" style="max-height: 300px;"><source src="${signedUrl}" type="${file.mime_type}"></video>`;
-            } else if (file.mime_type?.startsWith('audio/')) {
-                mediaHtml = `<audio controls class="media-preview"><source src="${signedUrl}" type="${file.mime_type}"></audio>`;
-            } else {
-                mediaHtml = `<div class="bg-gray-800 rounded-lg p-3 border border-gray-700 flex items-center space-x-3">
-                    <svg class="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    <div class="flex-1"><div class="font-medium">${file.filename}</div><div class="text-xs text-gray-400">${(file.size/1024).toFixed(0)}KB</div></div>
-                    <button onclick="window.downloadFile('${file.storage_path}', '${file.filename}')" class="bg-blue-600 hover:bg-blue-700 px-3 py-1 rounded text-sm">Скачать</button>
-                </div>`;
-            }
+            if (file.is_image) mediaHtml = `<img src="${signedUrl}" class="max-w-full rounded-2xl mt-1" style="max-height:250px">`;
+            else if (file.mime_type?.startsWith('video/')) mediaHtml = `<video controls class="max-w-full rounded-2xl mt-1" style="max-height:250px"><source src="${signedUrl}"></video>`;
+            else if (file.mime_type?.startsWith('audio/')) mediaHtml = `<audio controls class="w-full mt-1"><source src="${signedUrl}"></audio>`;
+            else mediaHtml = `<div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-200 dark:bg-gray-800">
+                <svg class="w-6 h-6 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                <div class="flex-1"><div class="font-medium">${file.filename}</div><div class="text-xs opacity-50">${(file.size/1024).toFixed(0)}KB</div></div>
+                <button class="download-btn bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full text-sm" data-path="${file.storage_path}" data-name="${file.filename}">Скачать</button>
+            </div>`;
             
-            div.innerHTML = `<div class="max-w-[75%]">
-                <div class="text-xs text-gray-400 mb-1 ${isOwn ? 'text-right' : ''}">${isOwn ? 'Вы' : activeChat.otherUserNickname} • ${time}</div>
-                <div class="rounded-2xl px-4 py-2 ${isOwn ? 'bg-blue-600' : 'bg-gray-700'}">
+            div.innerHTML = `<div class="max-w-[80%]">
+                <div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${isOwn?'Вы':activeChat.otherUserNickname} • ${time}</div>
+                <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'}">
                     ${mediaHtml}
-                    <div class="text-xs text-gray-300 mt-1">${file.filename}</div>
+                    <div class="text-xs opacity-70 mt-1">${file.filename}</div>
                 </div>
             </div>`;
             messagesContainer.appendChild(div);
+            
+            // Обработчик скачивания (с отметкой просмотра)
+            div.querySelector('.download-btn')?.addEventListener('click', async (e)=>{
+                e.stopPropagation();
+                const btn = e.currentTarget;
+                const path = btn.dataset.path;
+                const name = btn.dataset.name;
+                try {
+                    let blob = await getCachedFile(path);
+                    if (!blob) {
+                        const { data, error } = await supabase.storage.from('chat-files').download(path);
+                        if (error) throw error;
+                        blob = data;
+                        await cacheFile(path, blob);
+                    }
+                    // Отмечаем просмотр
+                    await supabase.from('file_views').insert({ file_id: file.id, user_id: currentUser.id });
+                    
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = name;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                } catch(e) { alert('Ошибка скачивания'); }
+            });
         }
         
-        function scrollToBottom() {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-        
-        window.downloadFile = async function(storagePath, filename) {
-            log(`Скачивание: ${filename}`);
-            try {
-                let blob = await getCachedFile(storagePath);
-                if (!blob) {
-                    const { data, error } = await supabase.storage.from('chat-files').download(storagePath);
-                    if (error) throw error;
-                    blob = data;
-                    await cacheFile(storagePath, blob);
-                }
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            } catch (e) {
-                errorLog('Ошибка скачивания: ' + e.message);
-                alert('Не удалось скачать файл');
-            }
-        };
+        async function getCachedFile(path) { return await db?.get('files', path); }
+        async function cacheFile(path, blob) { await db?.put('files', blob, path); }
         
         function setupRealtime(chatId) {
-            log(`Настройка Realtime для чата ${chatId}`);
-            
-            realtimeChannel = supabase
-                .channel(`chat-${chatId}`)
-                .on('postgres_changes', {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'messages',
-                    filter: `chat_id=eq.${chatId}`
-                }, async (payload) => {
-                    const newMsg = payload.new;
-                    log(`Realtime: новое сообщение в чате ${chatId}`);
-                    
-                    // Удаляем временное сообщение, если оно принадлежит текущему пользователю и совпадает по содержимому и времени (в пределах 2 секунд)
-                    const tempElements = document.querySelectorAll('[data-message-id^="temp_"]');
-                    for (const el of tempElements) {
-                        const sender = el.dataset.senderId;
-                        const content = el.dataset.messageContent;
-                        const createdAt = new Date(el.dataset.createdAt);
-                        const now = new Date();
-                        if (sender === currentUser.id && content === newMsg.content && (now - createdAt) < 5000) {
-                            el.remove();
-                            break;
-                        }
-                    }
-                    
-                    // Получаем никнейм отправителя
-                    const { data: sender } = await supabase
-                        .from('profiles')
-                        .select('nickname')
-                        .eq('id', newMsg.sender_id)
-                        .single();
-                    newMsg.sender = sender;
-                    
-                    await appendMessageElement(newMsg);
-                    scrollToBottom();
+            realtimeChannel = supabase.channel(`chat-${chatId}`)
+                .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`chat_id=eq.${chatId}` }, async (payload)=>{
+                    const msg = payload.new;
+                    // Удаляем временное сообщение, если есть
+                    const temps = document.querySelectorAll('[data-message-id^="temp_"]');
+                    temps.forEach(el => { if (el.dataset.senderId === currentUser.id && el.dataset.content === msg.content) el.remove(); });
+                    const { data: sender } = await supabase.from('profiles').select('nickname').eq('id', msg.sender_id).single();
+                    msg.sender = sender;
+                    appendMessageElement(msg);
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 })
-                .on('postgres_changes', {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'files',
-                    filter: `chat_id=eq.${chatId}`
-                }, async (payload) => {
-                    log(`Realtime: новый файл в чате ${chatId}`);
-                    await appendFileElement(payload.new);
-                    scrollToBottom();
+                .on('postgres_changes', { event:'INSERT', schema:'public', table:'files', filter:`chat_id=eq.${chatId}` }, (payload)=>{
+                    appendFileElement(payload.new);
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 })
-                .subscribe((status, err) => {
-                    if (status === 'SUBSCRIBED') {
-                        log('✅ Realtime подписка активна');
-                    } else if (status === 'CHANNEL_ERROR') {
-                        errorLog(`❌ Ошибка Realtime: ${err?.message || 'неизвестно'}`);
-                    } else if (status === 'TIMED_OUT') {
-                        errorLog('⏱️ Таймаут Realtime');
-                    } else if (status === 'CLOSED') {
-                        warnLog('Realtime канал закрыт');
-                    }
-                });
+                .subscribe();
         }
         
-        sendMessageForm.addEventListener('submit', async (e) => {
+        document.getElementById('send-message-form').addEventListener('submit', async (e)=>{
             e.preventDefault();
-            if (!activeChat || !messageInput.value.trim()) return;
             const content = messageInput.value.trim();
+            if (!content || !activeChat) return;
             messageInput.value = '';
-            
-            // Оптимистичное отображение
-            const tempId = 'temp_' + Date.now();
-            const tempMsg = {
-                id: tempId,
-                content,
-                created_at: new Date().toISOString(),
-                sender_id: currentUser.id,
-                sender: { nickname: currentProfile.nickname }
-            };
-            await appendMessageElement(tempMsg);
-            scrollToBottom();
-            
-            try {
-                const { error } = await supabase.from('messages').insert({
-                    chat_id: activeChat.id,
-                    sender_id: currentUser.id,
-                    content
-                });
-                if (error) throw error;
-                log('Сообщение отправлено');
-                // Realtime вставит реальное сообщение, а временное будет удалено при его приходе
-            } catch (e) {
-                errorLog('Ошибка отправки: ' + e.message);
-                // Удаляем временное сообщение при ошибке
-                const tempEl = document.querySelector(`[data-message-id="${tempId}"]`);
-                if (tempEl) tempEl.remove();
-            }
+            const tempId = 'temp_'+Date.now();
+            const tempMsg = { id: tempId, content, created_at: new Date().toISOString(), sender_id: currentUser.id, sender: { nickname: currentProfile.nickname } };
+            appendMessageElement(tempMsg);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            const { error } = await supabase.from('messages').insert({ chat_id: activeChat.id, sender_id: currentUser.id, content });
+            if (error) { document.querySelector(`[data-message-id="${tempId}"]`)?.remove(); displayError('Ошибка отправки', error); }
         });
         
         // Загрузка файлов
-        fileUpload.addEventListener('change', async (e) => {
+        fileUpload.addEventListener('change', async (e)=>{
             const file = e.target.files[0];
             if (!file) return;
-            
             uploadStatus.classList.remove('hidden');
             uploadStatus.textContent = `Загрузка ${file.name}...`;
-            
             try {
-                if (file.size > 100*1024*1024) throw new Error('Файл > 100MB');
-                
-                let processedFile = file;
+                if (file.size > 100*1024*1024) throw new Error('Файл >100MB');
+                let processed = file;
                 if (file.type.startsWith('image/')) {
-                    try {
-                        const options = { maxSizeMB: 1, maxWidthOrHeight: 1920, useWebWorker: true };
-                        processedFile = await imageCompression(file, options);
-                        log(`Сжато: ${(file.size/1024).toFixed(0)}KB -> ${(processedFile.size/1024).toFixed(0)}KB`);
-                    } catch(e) { warnLog('Сжатие не удалось: '+e.message); }
+                    processed = await imageCompression(file, { maxSizeMB:1, maxWidthOrHeight:1920 });
                 }
-                
-                const timestamp = Date.now();
-                const safeName = `${currentUser.id}_${timestamp}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-                const storagePath = `${activeChat.id}/${safeName}`;
-                
-                const { error: uploadError } = await supabase.storage.from('chat-files').upload(storagePath, processedFile);
-                if (uploadError) throw uploadError;
-                
-                await cacheFile(storagePath, processedFile);
-                
-                const { data: fileData, error: dbError } = await supabase.from('files').insert({
-                    chat_id: activeChat.id,
-                    uploaded_by: currentUser.id,
-                    storage_path: storagePath,
-                    filename: file.name,
-                    size: processedFile.size,
-                    mime_type: processedFile.type,
-                    is_image: processedFile.type.startsWith('image/')
+                const path = `${activeChat.id}/${currentUser.id}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g,'_')}`;
+                const { error: upErr } = await supabase.storage.from('chat-files').upload(path, processed);
+                if (upErr) throw upErr;
+                await cacheFile(path, processed);
+                const { data: fileData } = await supabase.from('files').insert({
+                    chat_id: activeChat.id, uploaded_by: currentUser.id, storage_path: path,
+                    filename: file.name, size: processed.size, mime_type: processed.type, is_image: processed.type.startsWith('image/')
                 }).select().single();
-                if (dbError) throw dbError;
-                
-                // Оптимистичное отображение
-                await appendFileElement(fileData);
-                scrollToBottom();
-                
-                uploadStatus.textContent = 'Файл отправлен!';
-                setTimeout(() => uploadStatus.classList.add('hidden'), 2000);
-            } catch (e) {
-                errorLog('Ошибка загрузки: ' + e.message);
-                uploadStatus.textContent = 'Ошибка загрузки';
-                setTimeout(() => uploadStatus.classList.add('hidden'), 3000);
-            } finally {
-                fileUpload.value = '';
-            }
+                appendFileElement(fileData);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                uploadStatus.textContent = 'Отправлено';
+                setTimeout(()=> uploadStatus.classList.add('hidden'), 2000);
+            } catch(e) { errorLog(e); uploadStatus.textContent = 'Ошибка'; }
+            finally { fileUpload.value = ''; }
         });
         
-        // Дебаг-консоль
-        clearDebugBtn.addEventListener('click', () => debugContent.innerHTML = '');
-        toggleDebugBtn.addEventListener('click', () => {
-            debugMinimized = !debugMinimized;
-            debugConsoleDiv.classList.toggle('debug-minimized', debugMinimized);
-            toggleDebugBtn.textContent = debugMinimized ? '□' : '_';
-        });
-        document.getElementById('debug-header').addEventListener('click', () => {
-            debugMinimized = !debugMinimized;
-            debugConsoleDiv.classList.toggle('debug-minimized', debugMinimized);
-            toggleDebugBtn.textContent = debugMinimized ? '□' : '_';
-        });
+        function escapeHtml(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
         
-        // Запуск
+        // Дебаг-консоль по клавише D
+        window.addEventListener('keydown', (e)=>{ if (e.key === 'd' || e.key === 'D') debugConsole.classList.toggle('hidden'); });
+        document.getElementById('close-debug').addEventListener('click', ()=> debugConsole.classList.add('hidden'));
+        
+        // Старт
         checkSession();
-        log('Приложение готово. Используется URL: ' + SUPABASE_URL);
     })();
 </script>
 </body>
