@@ -3,92 +3,103 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Chat</title>
+    <title>Chat with Replies & Reactions</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/idb@7.1.1/build/umd.js"></script>
     <style>
-        * { transition: background-color 0.2s, border-color 0.2s; }
+        * { transition: background-color 0.2s ease, border-color 0.2s ease; }
         .scrollbar-hidden::-webkit-scrollbar { display: none; }
         .scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fade-in-up {
-            from { opacity: 0; transform: translateY(8px); }
+            from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .message-animate { animation: fade-in-up 0.2s ease-out; }
-        .reply-preview { border-left: 3px solid #3b82f6; }
+        .message-animate { animation: fade-in-up 0.15s ease-out; }
+        .reaction-emoji { font-size: 1.2rem; line-height: 1; }
     </style>
 </head>
-<body class="font-sans antialiased bg-white dark:bg-black text-black dark:text-white">
+<body class="font-sans antialiased">
 
-<div id="app" class="h-screen flex overflow-hidden relative">
-    <!-- Бургер -->
-    <button id="menu-toggle" class="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-full bg-gray-200 dark:bg-gray-800">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+<div id="app" class="h-screen flex overflow-hidden bg-white dark:bg-black text-black dark:text-white">
+    
+    <!-- Бургер-кнопка (исправлен отступ, чтобы не наезжать на заголовок) -->
+    <button id="menu-toggle" class="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-full bg-gray-200 dark:bg-gray-800 ml-2 mt-2">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
     </button>
-
+    
     <!-- Сайдбар -->
-    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 lg:translate-x-0 -translate-x-full">
+    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 ease-in-out lg:translate-x-0 -translate-x-full">
         <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center justify-between">
             <div>
-                <h2 class="font-semibold text-lg" id="user-nickname-display"></h2>
+                <h2 class="font-semibold text-lg" id="user-nickname-display">Чаты</h2>
                 <span id="user-id-display" class="text-xs opacity-60"></span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center space-x-2">
                 <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
-                    <svg class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-                    <svg class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                    <svg id="theme-icon-light" class="w-5 h-5 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+                    <svg id="theme-icon-dark" class="w-5 h-5 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
                 </button>
-                <button id="logout-btn" class="text-sm px-3 py-1.5 rounded-full bg-gray-200 dark:bg-gray-800 hidden">Выйти</button>
+                <button id="logout-btn" class="text-sm px-3 py-1.5 rounded-full bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 hidden">Выйти</button>
             </div>
         </div>
 
         <div class="p-3 border-b border-gray-300 dark:border-gray-800">
-            <form id="add-chat-form" class="flex gap-2">
-                <input type="text" id="new-chat-input" placeholder="Username" class="flex-1 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-2 text-sm">
-                <button type="submit" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium">+</button>
+            <form id="add-chat-form" class="flex space-x-2">
+                <input type="text" id="new-chat-input" placeholder="Username" class="flex-1 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
+                <button type="submit" id="add-chat-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium hover:opacity-80 transition">
+                    <span>+</span>
+                </button>
             </form>
         </div>
 
-        <div class="flex-1 overflow-y-auto scrollbar-hidden p-2" id="chat-list-container">
-            <div id="chat-list" class="space-y-1"></div>
+        <div class="flex-1 overflow-y-auto scrollbar-hidden p-2">
+            <div id="chat-list" class="space-y-1">
+                <div class="text-center opacity-50 py-10">Загрузка...</div>
+            </div>
         </div>
     </div>
 
-    <!-- Чат -->
+    <!-- Основная область чата -->
     <div class="flex-1 flex flex-col bg-white dark:bg-black relative">
-        <!-- Шапка чата -->
-        <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center gap-2">
-            <button id="mobile-back-btn" class="lg:hidden p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
+        <!-- Заголовок чата (увеличен отступ для бургера) -->
+        <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center pl-16 lg:pl-4">
+            <button id="mobile-back-btn" class="lg:hidden mr-3 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 hidden">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
             </button>
-            <div class="flex-1">
+            <div>
                 <h3 id="active-chat-name" class="font-semibold text-lg"></h3>
                 <span id="active-chat-id-display" class="text-xs opacity-60"></span>
             </div>
         </div>
 
-        <!-- Сообщения -->
+        <!-- Область сообщений -->
         <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hidden">
-            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">Выберите чат</div>
+            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">
+                Выберите чат
+            </div>
         </div>
 
-        <!-- Превью ответа -->
-        <div id="reply-preview" class="hidden px-4 py-2 border-t border-gray-300 dark:border-gray-800 bg-gray-100 dark:bg-gray-900 flex items-start gap-3">
-            <div class="flex-1 text-sm opacity-80"></div>
-            <button id="cancel-reply" class="text-xl">&times;</button>
+        <!-- Блок ответа (reply) -->
+        <div id="reply-bar" class="px-4 py-2 border-t border-gray-300 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 hidden">
+            <div class="flex items-center justify-between">
+                <div class="flex-1 text-sm opacity-70 truncate" id="reply-preview"></div>
+                <button id="cancel-reply" class="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">&times;</button>
+            </div>
         </div>
 
-        <!-- Поле ввода -->
+        <!-- Форма отправки -->
         <div class="p-4 border-t border-gray-300 dark:border-gray-800">
-            <form id="send-message-form" class="flex items-center gap-2">
-                <input type="text" id="message-input" placeholder="Сообщение..." class="flex-1 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3" autocomplete="off" disabled>
+            <form id="send-message-form" class="flex items-center space-x-2">
+                <input type="text" id="message-input" placeholder="Сообщение..." class="flex-1 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3 focus:outline-none focus:ring-2 focus:ring-gray-400" autocomplete="off" disabled>
                 <label for="file-upload" class="cursor-pointer p-3 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/></svg>
                     <input type="file" id="file-upload" class="hidden">
                 </label>
-                <button type="submit" id="send-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full p-3 hover:opacity-80 disabled:opacity-30" disabled>
+                <button type="submit" id="send-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full p-3 hover:opacity-80 transition disabled:opacity-30" disabled>
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                 </button>
             </form>
@@ -99,56 +110,83 @@
 
 <!-- Модальное окно аутентификации -->
 <div id="auth-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-    <div class="bg-white dark:bg-gray-900 rounded-3xl w-full max-w-md p-6">
-        <h2 id="auth-modal-title" class="text-2xl font-bold mb-6 text-center">Вход</h2>
+    <div class="bg-white dark:bg-gray-900 rounded-3xl shadow-xl w-full max-w-md p-6">
+        <h2 id="auth-modal-title" class="text-2xl font-bold mb-6 text-center">Загрузка...</h2>
         <div id="auth-error" class="mb-4 bg-red-100 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl p-3 text-sm hidden"></div>
-        <form id="auth-form" class="space-y-4">
+        <form id="auth-form" class="space-y-4 hidden">
             <input type="text" id="auth-username" placeholder="Username" required minlength="3" maxlength="20" class="w-full bg-gray-100 dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3">
             <input type="password" id="auth-password" placeholder="Пароль" required minlength="6" class="w-full bg-gray-100 dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3">
             <div class="flex justify-between items-center pt-2">
-                <button type="button" id="switch-auth-mode" class="text-sm opacity-70 hover:opacity-100">↻ Регистрация</button>
-                <button type="submit" id="auth-submit-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-6 py-2 font-medium">Войти</button>
+                <button type="button" id="switch-auth-mode" class="text-sm opacity-70 hover:opacity-100">↻ Войти</button>
+                <button type="submit" id="auth-submit-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-6 py-2 font-medium">Регистрация</button>
             </div>
         </form>
-        <div id="auth-loading" class="text-center py-8 hidden">
+        <div id="auth-loading" class="text-center py-8">
             <div class="inline-block w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
-            <p class="mt-2 opacity-70">Проверка...</p>
+            <p class="mt-2 opacity-70">Проверка сессии...</p>
         </div>
     </div>
 </div>
 
-<!-- Контекстное меню сообщения -->
-<div id="context-menu" class="fixed z-50 hidden bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-300 dark:border-gray-700 py-2 min-w-[180px]">
-    <div class="flex justify-around px-2 pb-2 border-b border-gray-200 dark:border-gray-700">
-        <button class="reaction-btn" data-reaction="❤️">❤️</button>
-        <button class="reaction-btn" data-reaction="👍">👍</button>
-        <button class="reaction-btn" data-reaction="👎">👎</button>
-        <button class="reaction-btn" data-reaction="🤡">🤡</button>
-        <button class="reaction-btn" data-reaction="💩">💩</button>
-        <button class="reaction-btn" id="more-reactions">⋯</button>
+<!-- Контекстное меню для сообщения -->
+<div id="context-menu" class="fixed z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-300 dark:border-gray-700 py-1 hidden" style="min-width: 200px;">
+    <div class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-action="reply">↩️ Ответить</div>
+    <div class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-action="copy">📋 Копировать</div>
+    <div class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" data-action="delete">🗑️ Удалить</div>
+    <hr class="my-1 border-gray-300 dark:border-gray-700">
+    <div class="px-2 py-1 flex justify-around">
+        <button class="reaction-quick p-1 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="❤️">❤️</button>
+        <button class="reaction-quick p-1 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="👍">👍</button>
+        <button class="reaction-quick p-1 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="👎">👎</button>
+        <button class="reaction-quick p-1 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="🤡">🤡</button>
+        <button class="reaction-quick p-1 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="💩">💩</button>
     </div>
-    <div id="extra-reactions" class="hidden flex-wrap justify-around px-2 py-2 border-b border-gray-200 dark:border-gray-700"></div>
-    <button class="context-option w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700" data-action="reply">↩️ Ответить</button>
-    <button class="context-option w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700" data-action="copy">📋 Копировать</button>
-    <button class="context-option w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-red-500" data-action="delete">🗑️ Удалить</button>
+    <div class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-center" data-action="more-reactions">➕</div>
+</div>
+
+<!-- Панель выбора всех реакций -->
+<div id="reaction-picker" class="fixed z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-300 dark:border-gray-700 p-2 hidden">
+    <div class="grid grid-cols-6 gap-1">
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="❤️">❤️</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="👍">👍</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="👎">👎</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="🤡">🤡</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="💩">💩</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="😊">😊</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="😢">😢</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="😡">😡</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="🔥">🔥</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="🎉">🎉</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="💯">💯</button>
+        <button class="reaction-option p-2 text-xl hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full" data-reaction="👀">👀</button>
+    </div>
+</div>
+
+<!-- Дебаг-консоль (скрыта, D) -->
+<div id="debug-console" class="fixed bottom-4 right-4 w-96 bg-black/90 text-green-400 text-xs font-mono rounded-xl border border-gray-700 shadow-xl z-50 hidden" style="max-height: 300px;">
+    <div class="flex justify-between items-center p-2 bg-gray-800 rounded-t-xl">
+        <span>Debug</span>
+        <button id="close-debug" class="text-gray-400 hover:text-white">&times;</button>
+    </div>
+    <div id="debug-content" class="p-2 overflow-y-auto" style="max-height: 250px;"></div>
 </div>
 
 <script>
     (function(){
-        // Конфигурация
+        // ==================== КОНФИГУРАЦИЯ ====================
         const SUPABASE_URL = 'https://my-proxy-chat.wodaphone1337.workers.dev';
         const SUPABASE_ANON_KEY = 'sb_publishable_MP_XcGnCETIZB-2p6S4gHw_9L4PQCw0';
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        // Состояние
+        // ==================== СОСТОЯНИЕ ====================
         let currentUser = null, currentProfile = null, activeChat = null, chatsList = [];
         let realtimeChannel = null, chatsChannel = null;
-        let isLoginMode = true;
-        let db, theme = localStorage.getItem('theme') || 'dark';
-        let replyTo = null;
+        let isLoginMode = false, db, theme = localStorage.getItem('theme') || 'dark';
         let pendingMessages = new Map();
+        let replyToMessage = null;
+        let contextMenuTarget = null;
         
-        // DOM элементы
+        // ==================== DOM ЭЛЕМЕНТЫ ====================
         const authModal = document.getElementById('auth-modal');
         const authForm = document.getElementById('auth-form');
         const authError = document.getElementById('auth-error');
@@ -169,12 +207,13 @@
         const activeChatIdDisplay = document.getElementById('active-chat-id-display');
         const userNicknameDisplay = document.getElementById('user-nickname-display');
         const userIdDisplay = document.getElementById('user-id-display');
+        const replyBar = document.getElementById('reply-bar');
         const replyPreview = document.getElementById('reply-preview');
         const cancelReplyBtn = document.getElementById('cancel-reply');
         const contextMenu = document.getElementById('context-menu');
-        const extraReactions = document.getElementById('extra-reactions');
+        const reactionPicker = document.getElementById('reaction-picker');
         
-        // Инициализация
+        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
         async function initDB() { db = await idb.openDB('chat-cache', 1, { upgrade(db){ db.createObjectStore('files'); }}); }
         initDB();
         
@@ -188,17 +227,28 @@
         
         function log(msg) { console.log(`[${new Date().toLocaleTimeString()}] ${msg}`); }
         function errorLog(msg) { console.error(msg); }
+        function displayError(context, err) {
+            authError.textContent = `${context}: ${err?.message || JSON.stringify(err)}`;
+            authError.classList.remove('hidden');
+        }
+        function clearError() { authError.classList.add('hidden'); }
         
-        // Управление сайдбаром
+        // ==================== УПРАВЛЕНИЕ САЙДБАРОМ ====================
         function toggleSidebar(show) {
             if (show === undefined) sidebar.classList.toggle('-translate-x-full');
             else sidebar.classList.toggle('-translate-x-full', !show);
         }
         menuToggle.addEventListener('click', () => toggleSidebar());
         mobileBackBtn.addEventListener('click', () => toggleSidebar(true));
+        document.addEventListener('click', (e) => {
+            if (window.innerWidth < 1024 && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+                sidebar.classList.add('-translate-x-full');
+            }
+        });
         
-        // Аутентификация (username + password)
+        // ==================== АУТЕНТИФИКАЦИЯ (по username) ====================
         async function checkSession() {
+            authTitle.textContent = 'Загрузка...';
             authLoading.classList.remove('hidden');
             authForm.classList.add('hidden');
             try {
@@ -207,14 +257,13 @@
                     currentUser = session.user;
                     await loadProfile(currentUser.id);
                     showApp();
-                } else {
-                    showAuthForm();
-                }
-            } catch (e) { errorLog(e); showAuthForm(); }
+                } else { showAuthForm(); }
+            } catch (e) { displayError('Ошибка', e); showAuthForm(); }
         }
         
         async function loadProfile(userId) {
-            const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
+            const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+            if (!data) throw new Error('Профиль не найден');
             currentProfile = data;
             userNicknameDisplay.textContent = data.nickname;
             userIdDisplay.textContent = data.id.slice(0,8);
@@ -226,7 +275,7 @@
             authTitle.textContent = isLoginMode ? 'Вход' : 'Регистрация';
             document.getElementById('auth-submit-btn').textContent = isLoginMode ? 'Войти' : 'Зарегистрироваться';
             document.getElementById('switch-auth-mode').textContent = isLoginMode ? '↻ Регистрация' : '↻ Войти';
-            authError.classList.add('hidden');
+            clearError();
         }
         
         function showApp() {
@@ -243,25 +292,23 @@
         
         authForm.addEventListener('submit', async (e)=>{
             e.preventDefault();
+            clearError();
             const username = document.getElementById('auth-username').value.trim();
             const password = document.getElementById('auth-password').value;
             try {
                 if (isLoginMode) {
-                    const { data: profile } = await supabase.from('profiles').select('id').eq('nickname', username).single();
+                    const { data: profile } = await supabase.from('profiles').select('id').eq('nickname', username).maybeSingle();
                     if (!profile) throw new Error('Пользователь не найден');
-                    const email = `${username}@internal.user`;
+                    // Используем username как email (для совместимости с Supabase Auth)
+                    const email = `${username}@temp.mail`;
                     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
                     if (error) throw error;
                     currentUser = data.user;
                     await loadProfile(currentUser.id);
                     showApp();
                 } else {
-                    const email = `${username}@internal.user`;
-                    const { data, error } = await supabase.auth.signUp({
-                        email,
-                        password,
-                        options: { data: { nickname: username } }
-                    });
+                    const email = `${username}@temp.mail`;
+                    const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { nickname: username } } });
                     if (error) throw error;
                     await new Promise(r=>setTimeout(r,1000));
                     const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password });
@@ -270,10 +317,7 @@
                     await loadProfile(data.user.id);
                     showApp();
                 }
-            } catch(e) {
-                authError.textContent = e.message;
-                authError.classList.remove('hidden');
-            }
+            } catch(e) { displayError('Ошибка', e); }
         });
         
         document.getElementById('logout-btn').addEventListener('click', async ()=>{
@@ -282,13 +326,14 @@
             location.reload();
         });
         
-        // Realtime чатов
+        // ==================== REALTIME ДЛЯ ЧАТОВ ====================
         function setupChatsRealtime() {
             if (chatsChannel) supabase.removeChannel(chatsChannel);
             chatsChannel = supabase.channel('chats-list')
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats' }, (payload) => {
                     const chat = payload.new;
                     if (chat.user1_id === currentUser.id || chat.user2_id === currentUser.id) {
+                        log('Новый чат через Realtime');
                         loadChats();
                     }
                 })
@@ -302,7 +347,7 @@
                 .select(`id, user1_id, user2_id, user1:profiles!chats_user1_id_fkey(nickname), user2:profiles!chats_user2_id_fkey(nickname)`)
                 .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
                 .order('created_at', { ascending: false });
-            if (error) return;
+            if (error) { chatListDiv.innerHTML = '<div class="text-center text-red-500 py-10">Ошибка</div>'; return; }
             chatsList = data || [];
             renderChatList();
         }
@@ -342,7 +387,7 @@
                     selectChat(newChat.id, profile.id, profile.nickname);
                 }
                 document.getElementById('new-chat-input').value = '';
-            } catch(e) { alert(e.message); }
+            } catch(e) { displayError('Ошибка создания', e); }
         }
         
         document.getElementById('add-chat-form').addEventListener('submit', (e)=>{
@@ -351,7 +396,7 @@
             if (val) createChat(val);
         });
         
-        // Сообщения
+        // ==================== СООБЩЕНИЯ И REALTIME ====================
         async function selectChat(chatId, otherId, otherNickname) {
             if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
             activeChat = { id: chatId, otherUserId: otherId, otherUserNickname: otherNickname };
@@ -368,15 +413,21 @@
         
         async function loadMessages(chatId) {
             messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
-            const [msgRes, fileRes] = await Promise.all([
-                supabase.from('messages').select(`id, content, created_at, sender_id, reply_to, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at', { ascending: true }),
-                supabase.from('files').select('*').eq('chat_id', chatId).order('created_at', { ascending: true })
+            const [msgRes, fileRes, reactionsRes] = await Promise.all([
+                supabase.from('messages').select(`*, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at', { ascending: true }),
+                supabase.from('files').select('*').eq('chat_id', chatId).order('created_at', { ascending: true }),
+                supabase.from('reactions').select('*').in('message_id', supabase.from('messages').select('id').eq('chat_id', chatId))
             ]);
-            if (msgRes.error || fileRes.error) return;
-            renderAllMessages(msgRes.data, fileRes.data);
+            if (msgRes.error) { messagesContainer.innerHTML = '<div class="text-red-500">Ошибка</div>'; return; }
+            
+            const messages = msgRes.data;
+            const files = fileRes.data || [];
+            const reactions = reactionsRes.data || [];
+            
+            renderAllMessages(messages, files, reactions);
         }
         
-        function renderAllMessages(messages, files) {
+        function renderAllMessages(messages, files, reactions) {
             messagesContainer.innerHTML = '';
             const items = [
                 ...messages.map(m => ({ ...m, type: 'msg' })),
@@ -389,38 +440,63 @@
             }
             
             items.forEach(item => {
-                const el = item.type === 'msg' ? createMessageElement(item) : createFileElement(item);
-                el.classList.add('message-animate');
-                messagesContainer.appendChild(el);
+                if (item.type === 'msg') {
+                    const el = createMessageElement(item, reactions.filter(r => r.message_id === item.id));
+                    el.classList.add('message-animate');
+                    messagesContainer.appendChild(el);
+                } else {
+                    const el = createFileElement(item);
+                    el.classList.add('message-animate');
+                    messagesContainer.appendChild(el);
+                }
             });
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
-        function createMessageElement(msg) {
+        function createMessageElement(msg, reactions = []) {
             const isOwn = msg.sender_id === currentUser.id;
             const time = new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
-            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'} group relative`;
+            div.className = `message-wrapper flex ${isOwn ? 'justify-end' : 'justify-start'} relative group`;
             div.dataset.messageId = msg.id;
-            div.dataset.content = msg.content;
             div.dataset.senderId = msg.sender_id;
+            div.dataset.content = msg.content;
             
+            // Ответ на сообщение (если есть reply_to)
             let replyHtml = '';
             if (msg.reply_to) {
-                replyHtml = `<div class="text-xs opacity-70 mb-1 border-l-2 pl-2">↩️ Ответ</div>`;
+                const repliedMsg = messagesContainer.querySelector(`[data-message-id="${msg.reply_to}"]`);
+                const repliedText = repliedMsg?.dataset.content || 'Сообщение';
+                replyHtml = `<div class="text-xs opacity-60 border-l-2 border-gray-400 pl-2 mb-1 truncate">↩️ ${repliedText.substring(0, 30)}</div>`;
             }
+            
+            // Реакции
+            const reactionCounts = {};
+            reactions.forEach(r => reactionCounts[r.reaction] = (reactionCounts[r.reaction] || 0) + 1);
+            const reactionsHtml = Object.entries(reactionCounts).map(([emoji, count]) => 
+                `<span class="inline-flex items-center bg-gray-200 dark:bg-gray-700 rounded-full px-2 py-0.5 text-xs mr-1">${emoji} ${count}</span>`
+            ).join('');
             
             div.innerHTML = `<div class="max-w-[80%]">
                 <div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${msg.sender.nickname} • ${time}</div>
-                <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'}">
-                    ${replyHtml}
-                    <div>${escapeHtml(msg.content)}</div>
+                ${replyHtml}
+                <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'} relative">
+                    ${escapeHtml(msg.content)}
+                    ${reactionsHtml ? `<div class="mt-1 flex flex-wrap">${reactionsHtml}</div>` : ''}
                 </div>
+                <button class="message-menu-btn absolute top-0 right-0 p-1 opacity-0 group-hover:opacity-100 transition" style="transform: translate(50%, -50%);">⋯</button>
             </div>`;
             
-            div.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                showContextMenu(e, msg, 'msg');
+            const menuBtn = div.querySelector('.message-menu-btn');
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showContextMenu(e, msg);
+            });
+            
+            // Долгое нажатие для мобильных
+            div.addEventListener('touchstart', (e) => {
+                const timeout = setTimeout(() => showContextMenu(e, msg), 500);
+                div.addEventListener('touchend', () => clearTimeout(timeout), { once: true });
             });
             
             return div;
@@ -430,7 +506,7 @@
             const isOwn = file.uploaded_by === currentUser.id;
             const time = new Date(file.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
-            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'} group relative`;
+            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
             div.dataset.fileId = file.id;
             
             const innerDiv = document.createElement('div');
@@ -458,18 +534,11 @@
                 </div>`;
                 
                 innerDiv.querySelector('.rounded-3xl').innerHTML = mediaHtml + `<div class="text-xs opacity-70 mt-1">${file.filename}</div>`;
-                
                 innerDiv.querySelector('.download-btn')?.addEventListener('click', (e) => {
                     e.stopPropagation();
                     downloadFile(file.storage_path, file.filename, file.id);
                 });
-            }).catch(e => console.warn('Signed URL error:', e));
-            
-            div.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                showContextMenu(e, file, 'file');
             });
-            
             return div;
         }
         
@@ -483,7 +552,6 @@
                     await db?.put('files', blob, storagePath);
                 }
                 await supabase.from('file_views').insert({ file_id: fileId, user_id: currentUser.id });
-                
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
@@ -501,7 +569,8 @@
                     if (tempId) {
                         const tempEl = document.querySelector(`[data-message-id="${tempId}"]`);
                         if (tempEl) {
-                            const newEl = createMessageElement({...msg, sender: {nickname: currentProfile.nickname}});
+                            const { data: sender } = await supabase.from('profiles').select('nickname').eq('id', msg.sender_id).single();
+                            const newEl = createMessageElement({...msg, sender});
                             newEl.classList.add('message-animate');
                             tempEl.replaceWith(newEl);
                             pendingMessages.delete(tempId);
@@ -520,10 +589,99 @@
                     messagesContainer.appendChild(newEl);
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 })
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reactions' }, async (payload) => {
+                    const reaction = payload.new;
+                    const msgEl = document.querySelector(`[data-message-id="${reaction.message_id}"]`);
+                    if (msgEl) {
+                        const { data: reactions } = await supabase.from('reactions').select('*').eq('message_id', reaction.message_id);
+                        updateMessageReactions(reaction.message_id, reactions);
+                    }
+                })
                 .subscribe();
         }
         
-        // Отправка сообщения
+        function updateMessageReactions(messageId, reactions) {
+            const msgEl = document.querySelector(`[data-message-id="${messageId}"]`);
+            if (!msgEl) return;
+            const counts = {};
+            reactions.forEach(r => counts[r.reaction] = (counts[r.reaction] || 0) + 1);
+            const html = Object.entries(counts).map(([e,c]) => `<span class="inline-flex items-center bg-gray-200 dark:bg-gray-700 rounded-full px-2 py-0.5 text-xs mr-1">${e} ${c}</span>`).join('');
+            const container = msgEl.querySelector('.rounded-3xl');
+            let reactionsDiv = container.querySelector('.reactions-container');
+            if (!reactionsDiv) {
+                reactionsDiv = document.createElement('div');
+                reactionsDiv.className = 'reactions-container mt-1 flex flex-wrap';
+                container.appendChild(reactionsDiv);
+            }
+            reactionsDiv.innerHTML = html;
+        }
+        
+        // ==================== КОНТЕКСТНОЕ МЕНЮ ====================
+        function showContextMenu(e, msg) {
+            contextMenuTarget = msg;
+            contextMenu.style.display = 'block';
+            contextMenu.style.left = e.clientX + 'px';
+            contextMenu.style.top = e.clientY + 'px';
+            
+            const deleteBtn = contextMenu.querySelector('[data-action="delete"]');
+            if (msg.sender_id !== currentUser.id) {
+                deleteBtn.style.display = 'none';
+            } else {
+                deleteBtn.style.display = 'block';
+            }
+        }
+        
+        document.addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+            reactionPicker.style.display = 'none';
+        });
+        
+        contextMenu.addEventListener('click', async (e) => {
+            const action = e.target.dataset.action;
+            if (!action || !contextMenuTarget) return;
+            
+            if (action === 'reply') {
+                replyToMessage = contextMenuTarget;
+                replyPreview.textContent = `Ответ на: ${contextMenuTarget.dataset.content?.substring(0, 50)}`;
+                replyBar.classList.remove('hidden');
+            } else if (action === 'copy') {
+                navigator.clipboard.writeText(contextMenuTarget.dataset.content);
+            } else if (action === 'delete') {
+                if (contextMenuTarget.sender_id !== currentUser.id) return;
+                await supabase.from('messages').delete().eq('id', contextMenuTarget.id);
+                document.querySelector(`[data-message-id="${contextMenuTarget.id}"]`).remove();
+            } else if (action === 'more-reactions') {
+                reactionPicker.style.display = 'block';
+                const rect = contextMenu.getBoundingClientRect();
+                reactionPicker.style.left = rect.left + 'px';
+                reactionPicker.style.top = rect.bottom + 'px';
+            }
+            contextMenu.style.display = 'none';
+        });
+        
+        contextMenu.querySelectorAll('.reaction-quick').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const reaction = e.target.dataset.reaction;
+                await supabase.from('reactions').upsert({ message_id: contextMenuTarget.id, user_id: currentUser.id, reaction }, { onConflict: 'message_id,user_id' });
+                contextMenu.style.display = 'none';
+            });
+        });
+        
+        reactionPicker.querySelectorAll('.reaction-option').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const reaction = e.target.dataset.reaction;
+                await supabase.from('reactions').upsert({ message_id: contextMenuTarget.id, user_id: currentUser.id, reaction }, { onConflict: 'message_id,user_id' });
+                reactionPicker.style.display = 'none';
+                contextMenu.style.display = 'none';
+            });
+        });
+        
+        cancelReplyBtn.addEventListener('click', () => {
+            replyToMessage = null;
+            replyBar.classList.add('hidden');
+        });
+        
+        // ==================== ОТПРАВКА СООБЩЕНИЙ ====================
         document.getElementById('send-message-form').addEventListener('submit', async (e)=>{
             e.preventDefault();
             const content = messageInput.value.trim();
@@ -531,95 +689,28 @@
             messageInput.value = '';
             
             const tempId = 'temp_'+Date.now();
-            const tempMsg = { id: tempId, content, created_at: new Date().toISOString(), sender_id: currentUser.id, sender: { nickname: currentProfile.nickname }, reply_to: replyTo?.id };
+            const tempMsg = { id: tempId, content, created_at: new Date().toISOString(), sender_id: currentUser.id, sender: { nickname: currentProfile.nickname }, reply_to: replyToMessage?.id };
             const tempEl = createMessageElement(tempMsg);
             tempEl.classList.add('message-animate');
             messagesContainer.appendChild(tempEl);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
             pendingMessages.set(tempId, { content, senderId: currentUser.id });
             
-            const { error } = await supabase.from('messages').insert({
-                chat_id: activeChat.id,
-                sender_id: currentUser.id,
-                content,
-                reply_to: replyTo?.id
-            });
+            const insertData = { chat_id: activeChat.id, sender_id: currentUser.id, content };
+            if (replyToMessage) insertData.reply_to = replyToMessage.id;
             
+            const { error } = await supabase.from('messages').insert(insertData);
             if (error) {
                 tempEl.remove();
                 pendingMessages.delete(tempId);
-                alert('Ошибка отправки');
-            }
-            
-            if (replyTo) {
-                cancelReply();
-            }
-        });
-        
-        // Ответ
-        function setReply(message) {
-            replyTo = message;
-            replyPreview.classList.remove('hidden');
-            replyPreview.querySelector('div').textContent = `↩️ ${message.sender.nickname}: ${message.content.substring(0,50)}`;
-        }
-        function cancelReply() {
-            replyTo = null;
-            replyPreview.classList.add('hidden');
-        }
-        cancelReplyBtn.addEventListener('click', cancelReply);
-        
-        // Контекстное меню
-        let currentContextTarget = null;
-        function showContextMenu(e, item, type) {
-            currentContextTarget = { item, type };
-            contextMenu.style.left = e.pageX + 'px';
-            contextMenu.style.top = e.pageY + 'px';
-            contextMenu.classList.remove('hidden');
-            
-            const deleteBtn = contextMenu.querySelector('[data-action="delete"]');
-            if (type === 'msg' && item.sender_id !== currentUser.id) {
-                deleteBtn.classList.add('hidden');
+                displayError('Ошибка отправки', error);
             } else {
-                deleteBtn.classList.remove('hidden');
-            }
-        }
-        
-        document.addEventListener('click', (e) => {
-            if (!contextMenu.contains(e.target)) contextMenu.classList.add('hidden');
-        });
-        
-        contextMenu.addEventListener('click', async (e) => {
-            const action = e.target.closest('[data-action]')?.dataset.action;
-            if (!action) return;
-            const { item, type } = currentContextTarget || {};
-            contextMenu.classList.add('hidden');
-            
-            if (action === 'reply' && type === 'msg') {
-                setReply(item);
-            } else if (action === 'copy' && type === 'msg') {
-                navigator.clipboard?.writeText(item.content);
-            } else if (action === 'delete' && type === 'msg' && item.sender_id === currentUser.id) {
-                await supabase.from('messages').delete().eq('id', item.id);
-                document.querySelector(`[data-message-id="${item.id}"]`)?.remove();
+                replyToMessage = null;
+                replyBar.classList.add('hidden');
             }
         });
         
-        // Больше реакций
-        const allReactions = ['❤️','👍','👎','🤡','💩','😀','😢','🔥','🎉','👀'];
-        document.getElementById('more-reactions').addEventListener('click', () => {
-            extraReactions.classList.toggle('hidden');
-            if (!extraReactions.hasChildNodes()) {
-                allReactions.forEach(r => {
-                    const btn = document.createElement('button');
-                    btn.className = 'reaction-btn text-xl p-1';
-                    btn.textContent = r;
-                    btn.dataset.reaction = r;
-                    extraReactions.appendChild(btn);
-                });
-            }
-        });
-        
-        // Загрузка файлов
+        // ==================== ЗАГРУЗКА ФАЙЛОВ ====================
         fileUpload.addEventListener('change', async (e)=>{
             const file = e.target.files[0];
             if (!file) return;
@@ -652,7 +743,10 @@
         
         function escapeHtml(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
         
-        // Старт
+        // Дебаг-консоль
+        window.addEventListener('keydown', (e)=>{ if (e.key === 'd' || e.key === 'D') document.getElementById('debug-console').classList.toggle('hidden'); });
+        document.getElementById('close-debug').addEventListener('click', ()=> document.getElementById('debug-console').classList.add('hidden'));
+        
         checkSession();
     })();
 </script>
