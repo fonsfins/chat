@@ -17,14 +17,13 @@
             to { opacity: 1; transform: translateY(0); }
         }
         .message-animate { animation: fade-in-up 0.2s ease-out; }
-        .context-menu { position: absolute; z-index: 100; }
     </style>
 </head>
 <body class="font-sans antialiased">
 
 <div id="app" class="h-screen flex overflow-hidden bg-white dark:bg-black text-black dark:text-white">
     
-    <!-- Бургер-кнопка (с отступом, чтобы не перекрывать заголовок) -->
+    <!-- Бургер-кнопка -->
     <button id="menu-toggle" class="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-full bg-gray-200 dark:bg-gray-800 shadow-md">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
@@ -147,6 +146,9 @@
         <button id="copy-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg flex items-center gap-2">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg> Копировать
         </button>
+        <button id="edit-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg flex items-center gap-2 hidden">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg> Изменить
+        </button>
         <button id="delete-btn" class="w-full text-left px-4 py-2 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 rounded-lg flex items-center gap-2 hidden">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg> Удалить
         </button>
@@ -167,6 +169,7 @@
         let pendingMessages = new Map();
         let replyToMessage = null;
         let contextMenuMessage = null;
+        let editingMessage = null;
         
         // ==================== DOM ЭЛЕМЕНТЫ ====================
         const authModal = document.getElementById('auth-modal');
@@ -189,9 +192,19 @@
         const replyText = document.getElementById('reply-text');
         const cancelReply = document.getElementById('cancel-reply');
         const contextMenu = document.getElementById('message-context-menu');
+        const editBtn = document.getElementById('edit-btn');
+        const deleteBtn = document.getElementById('delete-btn');
         
         // ==================== ИНИЦИАЛИЗАЦИЯ ====================
-        async function initDB() { db = await idb.openDB('chat-cache', 1, { upgrade(db){ db.createObjectStore('files'); }}); }
+        async function initDB() {
+            db = await idb.openDB('chat-cache', 2, {
+                upgrade(db, oldVersion) {
+                    if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+                    if (!db.objectStoreNames.contains('messages')) db.createObjectStore('messages', { keyPath: 'id' });
+                    if (!db.objectStoreNames.contains('chats')) db.createObjectStore('chats');
+                }
+            });
+        }
         initDB();
         
         function applyTheme(t) {
@@ -373,9 +386,29 @@
             messageInput.disabled = false;
             sendBtn.disabled = false;
             renderChatList();
+            
+            // Показываем кешированные сообщения
+            await loadCachedMessages(chatId);
+            // Затем подгружаем свежие с сервера
             await loadMessages(chatId);
             setupMessagesRealtime(chatId);
             messageInput.focus();
+        }
+        
+        async function loadCachedMessages(chatId) {
+            try {
+                const cached = await db.get('messages', chatId);
+                if (cached && cached.messages) {
+                    const { messages, files, reactions } = cached;
+                    renderAllMessages(messages, files, reactions);
+                }
+            } catch(e) {}
+        }
+        
+        async function cacheMessages(chatId, messages, files, reactions) {
+            try {
+                await db.put('messages', { messages, files, reactions }, chatId);
+            } catch(e) {}
         }
         
         async function loadMessages(chatId) {
@@ -388,6 +421,8 @@
             const messages = msgRes.data || [];
             const files = fileRes.data || [];
             const reactions = reactRes.data || [];
+            
+            await cacheMessages(chatId, messages, files, reactions);
             renderAllMessages(messages, files, reactions);
         }
         
@@ -420,7 +455,6 @@
             div.dataset.content = msg.content;
             div.dataset.senderId = msg.sender_id;
             
-            // Ответ на сообщение
             let replyHtml = '';
             if (msg.reply_to) {
                 const repliedMsg = [...document.querySelectorAll('.message-wrapper')].find(el => el.dataset.messageId == msg.reply_to);
@@ -430,7 +464,6 @@
                 }
             }
             
-            // Группировка реакций
             const reactionCounts = reactions.reduce((acc, r) => {
                 acc[r.reaction] = (acc[r.reaction] || 0) + 1;
                 return acc;
@@ -448,7 +481,6 @@
                 <div class="reactions mt-1">${reactionHtml}</div>
             </div>`;
             
-            // Контекстное меню
             div.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 showContextMenu(e, msg);
@@ -521,8 +553,10 @@
         }
         
         function setupMessagesRealtime(chatId) {
+            if (realtimeChannel) supabase.removeChannel(realtimeChannel);
             realtimeChannel = supabase.channel(`chat-${chatId}`)
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, async (payload) => {
+                    console.log('Realtime message:', payload);
                     const msg = payload.new;
                     const tempId = [...pendingMessages.entries()].find(([k, v]) => v.content === msg.content && v.senderId === msg.sender_id)?.[0];
                     if (tempId) {
@@ -541,6 +575,8 @@
                         messagesContainer.appendChild(newEl);
                     }
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                    // Обновить кеш
+                    loadMessages(chatId); // перезапишет кеш актуальными данными
                 })
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files', filter: `chat_id=eq.${chatId}` }, (payload) => {
                     const newEl = createFileElement(payload.new);
@@ -549,23 +585,48 @@
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 })
                 .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reactions' }, async (payload) => {
-                    // Обновить реакции у сообщения
                     if (activeChat) loadMessages(activeChat.id);
                 })
-                .subscribe();
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+                    const updatedMsg = payload.new;
+                    const oldEl = document.querySelector(`[data-message-id="${updatedMsg.id}"]`);
+                    if (oldEl) {
+                        const newEl = createMessageElement(updatedMsg);
+                        newEl.classList.add('message-animate');
+                        oldEl.replaceWith(newEl);
+                    }
+                })
+                .subscribe((status) => {
+                    console.log('Realtime status:', status);
+                    if (status === 'SUBSCRIBED') {
+                        console.log('✅ Realtime subscribed');
+                    }
+                });
         }
         
         // ==================== КОНТЕКСТНОЕ МЕНЮ ====================
         function showContextMenu(event, msg) {
             contextMenuMessage = msg;
-            contextMenu.style.left = event.clientX + 'px';
-            contextMenu.style.top = event.clientY + 'px';
+            const x = event.clientX;
+            const y = event.clientY;
+            const menuWidth = 200;
+            const menuHeight = 300;
+            
+            let left = x;
+            let top = y;
+            
+            if (x + menuWidth > window.innerWidth) left = x - menuWidth;
+            if (y + menuHeight > window.innerHeight) top = y - menuHeight;
+            
+            contextMenu.style.left = left + 'px';
+            contextMenu.style.top = top + 'px';
             contextMenu.classList.remove('hidden');
             
-            const deleteBtn = document.getElementById('delete-btn');
             if (msg.sender_id === currentUser.id) {
+                editBtn.classList.remove('hidden');
                 deleteBtn.classList.remove('hidden');
             } else {
+                editBtn.classList.add('hidden');
                 deleteBtn.classList.add('hidden');
             }
         }
@@ -581,17 +642,16 @@
             btn.addEventListener('click', async () => {
                 if (!contextMenuMessage) return;
                 const reaction = btn.dataset.reaction;
-                await supabase.from('message_reactions').insert({
+                await supabase.from('message_reactions').upsert({
                     message_id: contextMenuMessage.id,
                     user_id: currentUser.id,
                     reaction
-                });
+                }, { onConflict: 'message_id, user_id, reaction' });
                 contextMenu.classList.add('hidden');
             });
         });
         
         document.getElementById('more-reactions-btn').addEventListener('click', () => {
-            // Показываем расширенный список реакций (можно реализовать отдельное меню)
             alert('Больше реакций скоро');
         });
         
@@ -616,8 +676,16 @@
             contextMenu.classList.add('hidden');
         });
         
-        document.getElementById('delete-btn').addEventListener('click', async () => {
-            if (!contextMenuMessage || contextMenuMessage.sender_id !== currentUser.id) return;
+        editBtn.addEventListener('click', () => {
+            if (!contextMenuMessage) return;
+            messageInput.value = contextMenuMessage.content;
+            editingMessage = contextMenuMessage;
+            contextMenu.classList.add('hidden');
+            messageInput.focus();
+        });
+        
+        deleteBtn.addEventListener('click', async () => {
+            if (!contextMenuMessage) return;
             await supabase.from('messages').delete().eq('id', contextMenuMessage.id);
             contextMenu.classList.add('hidden');
         });
@@ -627,6 +695,15 @@
             e.preventDefault();
             const content = messageInput.value.trim();
             if (!content || !activeChat) return;
+            
+            if (editingMessage) {
+                // Редактирование
+                await supabase.from('messages').update({ content }).eq('id', editingMessage.id);
+                editingMessage = null;
+                messageInput.value = '';
+                return;
+            }
+            
             messageInput.value = '';
             
             const tempId = 'temp_'+Date.now();
