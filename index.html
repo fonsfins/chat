@@ -12,9 +12,13 @@
         * { transition: background-color 0.2s ease, border-color 0.2s ease; }
         .scrollbar-hidden::-webkit-scrollbar { display: none; }
         .scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes slide-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-slide-up { animation: slide-up 0.2s ease-out; }
-        .message-temp { opacity: 0.7; }
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .message-animate {
+            animation: fade-in-up 0.2s ease-out;
+        }
     </style>
 </head>
 <body class="font-sans antialiased">
@@ -23,11 +27,13 @@
     
     <!-- Бургер-кнопка -->
     <button id="menu-toggle" class="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-full bg-gray-200 dark:bg-gray-800">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
     </button>
     
     <!-- Сайдбар -->
-    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 lg:translate-x-0 -translate-x-full">
+    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 ease-in-out lg:translate-x-0 -translate-x-full">
         <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-lg" id="user-nickname-display">Чаты</h2>
@@ -45,7 +51,9 @@
         <div class="p-3 border-b border-gray-300 dark:border-gray-800">
             <form id="add-chat-form" class="flex space-x-2">
                 <input type="text" id="new-chat-input" placeholder="Ник или ID" class="flex-1 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-                <button type="submit" id="add-chat-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium hover:opacity-80 transition">+</button>
+                <button type="submit" id="add-chat-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium hover:opacity-80 transition">
+                    <span>+</span>
+                </button>
             </form>
         </div>
 
@@ -56,7 +64,7 @@
         </div>
     </div>
 
-    <!-- Основная область -->
+    <!-- Основная область чата -->
     <div class="flex-1 flex flex-col bg-white dark:bg-black">
         <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center">
             <button id="mobile-back-btn" class="lg:hidden mr-3 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 hidden">
@@ -69,7 +77,9 @@
         </div>
 
         <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hidden">
-            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">Выберите чат</div>
+            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">
+                Выберите чат
+            </div>
         </div>
 
         <div class="p-4 border-t border-gray-300 dark:border-gray-800">
@@ -108,7 +118,7 @@
     </div>
 </div>
 
-<!-- Скрытая дебаг-консоль (по D) -->
+<!-- Дебаг-консоль (скрыта, показывается по клавише D) -->
 <div id="debug-console" class="fixed bottom-4 right-4 w-96 bg-black/90 text-green-400 text-xs font-mono rounded-xl border border-gray-700 shadow-xl z-50 hidden" style="max-height: 300px;">
     <div class="flex justify-between items-center p-2 bg-gray-800 rounded-t-xl">
         <span>Debug</span>
@@ -126,8 +136,9 @@
         
         // ==================== СОСТОЯНИЕ ====================
         let currentUser = null, currentProfile = null, activeChat = null, chatsList = [];
-        let realtimeChannel = null, globalRealtimeChannel = null; // для глобальных событий (чаты)
+        let realtimeChannel = null, chatsChannel = null;
         let isLoginMode = false, db, theme = localStorage.getItem('theme') || 'dark';
+        let pendingMessages = new Map(); // временные сообщения
         
         // ==================== DOM ЭЛЕМЕНТЫ ====================
         const app = document.getElementById('app');
@@ -146,8 +157,11 @@
         const sendBtn = document.getElementById('send-btn');
         const fileUpload = document.getElementById('file-upload');
         const uploadStatus = document.getElementById('upload-status');
-        const debugConsole = document.getElementById('debug-console');
-        const debugContent = document.getElementById('debug-content');
+        const chatListDiv = document.getElementById('chat-list');
+        const activeChatName = document.getElementById('active-chat-name');
+        const activeChatIdDisplay = document.getElementById('active-chat-id-display');
+        const userNicknameDisplay = document.getElementById('user-nickname-display');
+        const userIdDisplay = document.getElementById('user-id-display');
         
         // ==================== ИНИЦИАЛИЗАЦИЯ ====================
         async function initDB() { db = await idb.openDB('chat-cache', 1, { upgrade(db){ db.createObjectStore('files'); }}); }
@@ -164,13 +178,12 @@
         function log(msg) { console.log(`[${new Date().toLocaleTimeString()}] ${msg}`); }
         function errorLog(msg) { console.error(msg); }
         function displayError(context, err) {
-            const msg = err?.message || JSON.stringify(err);
-            authError.textContent = `${context}: ${msg}`;
+            authError.textContent = `${context}: ${err?.message || JSON.stringify(err)}`;
             authError.classList.remove('hidden');
         }
         function clearError() { authError.classList.add('hidden'); }
         
-        // Управление сайдбаром
+        // ==================== УПРАВЛЕНИЕ САЙДБАРОМ ====================
         function toggleSidebar(show) {
             if (show === undefined) sidebar.classList.toggle('-translate-x-full');
             else sidebar.classList.toggle('-translate-x-full', !show);
@@ -202,8 +215,8 @@
             const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
             if (!data) throw new Error('Профиль не найден');
             currentProfile = data;
-            document.getElementById('user-nickname-display').textContent = data.nickname;
-            document.getElementById('user-id-display').textContent = data.id.slice(0,8);
+            userNicknameDisplay.textContent = data.nickname;
+            userIdDisplay.textContent = data.id.slice(0,8);
         }
         
         function showAuthForm() {
@@ -218,8 +231,8 @@
         function showApp() {
             authModal.classList.add('hidden');
             document.getElementById('logout-btn').classList.remove('hidden');
+            setupChatsRealtime();
             loadChats();
-            setupGlobalRealtime(); // подписка на новые чаты
         }
         
         document.getElementById('switch-auth-mode').addEventListener('click', ()=>{
@@ -256,27 +269,44 @@
         });
         
         document.getElementById('logout-btn').addEventListener('click', async ()=>{
+            if (chatsChannel) supabase.removeChannel(chatsChannel);
             await supabase.auth.signOut();
             location.reload();
         });
         
-        // ==================== ЧАТЫ (с Realtime) ====================
+        // ==================== REALTIME ДЛЯ ЧАТОВ ====================
+        function setupChatsRealtime() {
+            if (chatsChannel) supabase.removeChannel(chatsChannel);
+            chatsChannel = supabase.channel('chats-list')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats' }, (payload) => {
+                    // Проверяем, относится ли новый чат к текущему пользователю
+                    const chat = payload.new;
+                    if (chat.user1_id === currentUser.id || chat.user2_id === currentUser.id) {
+                        log('Новый чат добавлен через Realtime');
+                        loadChats(); // перезагружаем список
+                    }
+                })
+                .subscribe();
+        }
+        
+        // ==================== ЗАГРУЗКА ЧАТОВ ====================
         async function loadChats() {
-            const container = document.getElementById('chat-list');
-            container.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
+            chatListDiv.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
             const { data, error } = await supabase
                 .from('chats')
                 .select(`id, user1_id, user2_id, user1:profiles!chats_user1_id_fkey(nickname), user2:profiles!chats_user2_id_fkey(nickname)`)
                 .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
                 .order('created_at', { ascending: false });
-            if (error) { container.innerHTML = '<div class="text-red-500 py-10">Ошибка</div>'; return; }
+            if (error) { chatListDiv.innerHTML = '<div class="text-center text-red-500 py-10">Ошибка</div>'; return; }
             chatsList = data || [];
             renderChatList();
         }
         
         function renderChatList() {
-            const container = document.getElementById('chat-list');
-            if (chatsList.length === 0) { container.innerHTML = '<div class="text-center opacity-50 py-10">Нет чатов</div>'; return; }
+            if (chatsList.length === 0) {
+                chatListDiv.innerHTML = '<div class="text-center opacity-50 py-10">Нет чатов</div>';
+                return;
+            }
             let html = '';
             chatsList.forEach(chat => {
                 const other = chat.user1_id === currentUser.id ? chat.user2 : chat.user1;
@@ -285,8 +315,8 @@
                     <div class="text-xs opacity-50">ID: ${chat.id}</div>
                 </div>`;
             });
-            container.innerHTML = html;
-            container.querySelectorAll('.chat-item').forEach(el => el.addEventListener('click', ()=>{
+            chatListDiv.innerHTML = html;
+            chatListDiv.querySelectorAll('.chat-item').forEach(el => el.addEventListener('click', ()=>{
                 selectChat(parseInt(el.dataset.chatId), el.dataset.otherId, el.dataset.otherNickname);
                 if (window.innerWidth < 1024) toggleSidebar(false);
             }));
@@ -308,11 +338,9 @@
                 const u2 = currentUser.id < profile.id ? profile.id : currentUser.id;
                 const { data: exist } = await supabase.from('chats').select('id').eq('user1_id', u1).eq('user2_id', u2).maybeSingle();
                 if (exist) {
-                    await loadChats();
                     selectChat(exist.id, profile.id, profile.nickname);
                 } else {
                     const { data: newChat } = await supabase.from('chats').insert({ user1_id: u1, user2_id: u2 }).select().single();
-                    await loadChats();
                     selectChat(newChat.id, profile.id, profile.nickname);
                 }
                 document.getElementById('new-chat-input').value = '';
@@ -325,26 +353,26 @@
             if (val) createChat(val);
         });
         
-        // ==================== СООБЩЕНИЯ И ФАЙЛЫ ====================
+        // ==================== СООБЩЕНИЯ И REALTIME ====================
         async function selectChat(chatId, otherId, otherNickname) {
             if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
             activeChat = { id: chatId, otherUserId: otherId, otherUserNickname: otherNickname };
-            document.getElementById('active-chat-name').textContent = otherNickname;
-            document.getElementById('active-chat-id-display').textContent = `ID: ${chatId}`;
+            activeChatName.textContent = otherNickname;
+            activeChatIdDisplay.textContent = `ID: ${chatId}`;
             noChatMsg.style.display = 'none';
             messageInput.disabled = false;
             sendBtn.disabled = false;
             renderChatList();
             await loadMessages(chatId);
-            setupRealtime(chatId);
+            setupMessagesRealtime(chatId);
             messageInput.focus();
         }
         
         async function loadMessages(chatId) {
             messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
             const [msgRes, fileRes] = await Promise.all([
-                supabase.from('messages').select(`id, content, created_at, sender_id, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at'),
-                supabase.from('files').select('*').eq('chat_id', chatId).order('created_at')
+                supabase.from('messages').select(`id, content, created_at, sender_id, sender:profiles!messages_sender_id_fkey(nickname)`).eq('chat_id', chatId).order('created_at', { ascending: true }),
+                supabase.from('files').select('*').eq('chat_id', chatId).order('created_at', { ascending: true })
             ]);
             if (msgRes.error || fileRes.error) { messagesContainer.innerHTML = '<div class="text-red-500">Ошибка</div>'; return; }
             renderAllMessages(msgRes.data, fileRes.data);
@@ -352,143 +380,163 @@
         
         function renderAllMessages(messages, files) {
             messagesContainer.innerHTML = '';
+            // Объединяем и сортируем строго по времени создания (возрастание)
             const items = [
-                ...messages.map(m=>({...m, type:'msg'})),
-                ...files.map(f=>({...f, type:'file'}))
-            ].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+                ...messages.map(m => ({ ...m, type: 'msg' })),
+                ...files.map(f => ({ ...f, type: 'file', created_at: f.created_at }))
+            ].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             
-            if (items.length===0) { messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Нет сообщений</div>'; return; }
-            items.forEach(item => item.type==='msg' ? appendMessageElement(item) : appendFileElement(item));
+            if (items.length === 0) {
+                messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Нет сообщений</div>';
+                return;
+            }
+            
+            items.forEach(item => {
+                const el = item.type === 'msg' ? createMessageElement(item) : createFileElement(item);
+                el.classList.add('message-animate');
+                messagesContainer.appendChild(el);
+            });
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
-        function appendMessageElement(msg, isTemp = false) {
+        function createMessageElement(msg) {
             const isOwn = msg.sender_id === currentUser.id;
             const time = new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
-            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'} animate-slide-up`;
+            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
             div.dataset.messageId = msg.id;
             div.dataset.content = msg.content;
             div.dataset.senderId = msg.sender_id;
-            if (isTemp) div.classList.add('message-temp');
             div.innerHTML = `<div class="max-w-[80%]">
                 <div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${msg.sender.nickname} • ${time}</div>
                 <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'}">${escapeHtml(msg.content)}</div>
             </div>`;
-            messagesContainer.appendChild(div);
             return div;
         }
         
-        async function appendFileElement(file) {
+        function createFileElement(file) {
             const isOwn = file.uploaded_by === currentUser.id;
             const time = new Date(file.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
-            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'} animate-slide-up`;
+            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
             div.dataset.fileId = file.id;
             
-            let signedUrl = '';
-            try {
-                const { data } = await supabase.storage.from('chat-files').createSignedUrl(file.storage_path, 3600);
-                signedUrl = data.signedUrl;
-            } catch(e) { console.warn('Signed URL error:', e); signedUrl = '#'; }
-            
-            let mediaHtml = '';
-            if (file.is_image) mediaHtml = `<img src="${signedUrl}" class="max-w-full rounded-2xl mt-1" style="max-height:250px">`;
-            else if (file.mime_type?.startsWith('video/')) mediaHtml = `<video controls class="max-w-full rounded-2xl mt-1" style="max-height:250px"><source src="${signedUrl}"></video>`;
-            else if (file.mime_type?.startsWith('audio/')) mediaHtml = `<audio controls class="w-full mt-1"><source src="${signedUrl}"></audio>`;
-            else mediaHtml = `<div class="flex items-center gap-3 p-3 rounded-2xl bg-gray-200 dark:bg-gray-800">
-                <svg class="w-6 h-6 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                <div class="flex-1"><div class="font-medium">${file.filename}</div><div class="text-xs opacity-50">${(file.size/1024).toFixed(0)}KB</div></div>
-                <button class="download-btn bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full text-sm" data-path="${file.storage_path}" data-name="${file.filename}">Скачать</button>
-            </div>`;
-            
-            div.innerHTML = `<div class="max-w-[80%]">
-                <div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${isOwn?'Вы':activeChat.otherUserNickname} • ${time}</div>
+            // Временно показываем плейсхолдер, URL подставится асинхронно
+            const innerDiv = document.createElement('div');
+            innerDiv.className = `max-w-[80%]`;
+            innerDiv.innerHTML = `<div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${isOwn?'Вы':activeChat.otherUserNickname} • ${time}</div>
                 <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'}">
-                    ${mediaHtml}
+                    <div class="flex items-center gap-3">
+                        <div class="w-6 h-6 bg-gray-400/20 rounded-full animate-pulse"></div>
+                        <div class="flex-1"><div class="h-4 bg-gray-400/20 rounded w-3/4"></div></div>
+                    </div>
                     <div class="text-xs opacity-70 mt-1">${file.filename}</div>
-                </div>
-            </div>`;
-            messagesContainer.appendChild(div);
+                </div>`;
+            div.appendChild(innerDiv);
             
-            div.querySelector('.download-btn')?.addEventListener('click', async (e)=>{
-                e.stopPropagation();
-                const btn = e.currentTarget;
-                const path = btn.dataset.path;
-                const name = btn.dataset.name;
-                try {
-                    let blob = await getCachedFile(path);
-                    if (!blob) {
-                        const { data, error } = await supabase.storage.from('chat-files').download(path);
-                        if (error) throw error;
-                        blob = data;
-                        await cacheFile(path, blob);
-                    }
-                    // Отмечаем просмотр (это запустит удаление на сервере)
-                    await supabase.from('file_views').insert({ file_id: file.id, user_id: currentUser.id });
-                    
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = name;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                } catch(e) { alert('Ошибка скачивания'); }
-            });
+            // Асинхронно загружаем signed URL и обновляем содержимое
+            supabase.storage.from('chat-files').createSignedUrl(file.storage_path, 3600).then(({ data }) => {
+                const signedUrl = data?.signedUrl || '#';
+                let mediaHtml = '';
+                if (file.is_image) mediaHtml = `<img src="${signedUrl}" class="max-w-full rounded-2xl mt-1" style="max-height:250px">`;
+                else if (file.mime_type?.startsWith('video/')) mediaHtml = `<video controls class="max-w-full rounded-2xl mt-1" style="max-height:250px"><source src="${signedUrl}"></video>`;
+                else if (file.mime_type?.startsWith('audio/')) mediaHtml = `<audio controls class="w-full mt-1"><source src="${signedUrl}"></audio>`;
+                else mediaHtml = `<div class="flex items-center gap-3">
+                    <svg class="w-6 h-6 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    <div class="flex-1"><div class="font-medium">${file.filename}</div><div class="text-xs opacity-50">${(file.size/1024).toFixed(0)}KB</div></div>
+                    <button class="download-btn bg-black dark:bg-white text-white dark:text-black px-3 py-1 rounded-full text-sm" data-path="${file.storage_path}" data-name="${file.filename}" data-file-id="${file.id}">Скачать</button>
+                </div>`;
+                
+                innerDiv.querySelector('.rounded-3xl').innerHTML = mediaHtml + `<div class="text-xs opacity-70 mt-1">${file.filename}</div>`;
+                
+                // Вешаем обработчик скачивания
+                innerDiv.querySelector('.download-btn')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    downloadFile(file.storage_path, file.filename, file.id);
+                });
+            }).catch(e => console.warn('Signed URL error:', e));
+            
+            return div;
         }
         
-        async function getCachedFile(path) { return await db?.get('files', path); }
-        async function cacheFile(path, blob) { await db?.put('files', blob, path); }
+        async function downloadFile(storagePath, filename, fileId) {
+            try {
+                let blob = await db?.get('files', storagePath);
+                if (!blob) {
+                    const { data, error } = await supabase.storage.from('chat-files').download(storagePath);
+                    if (error) throw error;
+                    blob = data;
+                    await db?.put('files', blob, storagePath);
+                }
+                // Отмечаем просмотр (триггер в БД проверит и удалит файл, если оба просмотрели)
+                await supabase.from('file_views').insert({ file_id: fileId, user_id: currentUser.id });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch(e) { alert('Ошибка скачивания'); }
+        }
         
-        function setupRealtime(chatId) {
+        function setupMessagesRealtime(chatId) {
             realtimeChannel = supabase.channel(`chat-${chatId}`)
-                .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`chat_id=eq.${chatId}` }, async (payload)=>{
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `chat_id=eq.${chatId}` }, async (payload) => {
                     const msg = payload.new;
-                    // Удаляем временное сообщение (плавно)
-                    const temp = document.querySelector(`[data-message-id^="temp_"][data-content="${msg.content}"][data-sender-id="${currentUser.id}"]`);
-                    if (temp) temp.remove();
-                    
-                    const { data: sender } = await supabase.from('profiles').select('nickname').eq('id', msg.sender_id).single();
-                    msg.sender = sender;
-                    const newMsgEl = appendMessageElement(msg);
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                })
-                .on('postgres_changes', { event:'INSERT', schema:'public', table:'files', filter:`chat_id=eq.${chatId}` }, (payload)=>{
-                    appendFileElement(payload.new);
-                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-                })
-                .subscribe();
-        }
-        
-        function setupGlobalRealtime() {
-            // Подписка на новые чаты, в которых участвует текущий пользователь
-            globalRealtimeChannel = supabase.channel('global-chats')
-                .on('postgres_changes', { event:'INSERT', schema:'public', table:'chats' }, (payload) => {
-                    const newChat = payload.new;
-                    if (newChat.user1_id === currentUser.id || newChat.user2_id === currentUser.id) {
-                        log('Обнаружен новый чат, обновляем список');
-                        loadChats(); // можно добавить только этот чат, но проще перезагрузить
+                    // Проверяем, нет ли уже такого временного сообщения
+                    const tempId = [...pendingMessages.entries()].find(([k, v]) => v.content === msg.content && v.senderId === msg.sender_id)?.[0];
+                    if (tempId) {
+                        const tempEl = document.querySelector(`[data-message-id="${tempId}"]`);
+                        if (tempEl) {
+                            // Заменяем временное на настоящее с анимацией
+                            const newEl = createMessageElement({...msg, sender: {nickname: currentProfile.nickname}});
+                            newEl.classList.add('message-animate');
+                            tempEl.replaceWith(newEl);
+                            pendingMessages.delete(tempId);
+                        }
+                    } else {
+                        const { data: sender } = await supabase.from('profiles').select('nickname').eq('id', msg.sender_id).single();
+                        const newEl = createMessageElement({...msg, sender});
+                        newEl.classList.add('message-animate');
+                        messagesContainer.appendChild(newEl);
                     }
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                })
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'files', filter: `chat_id=eq.${chatId}` }, (payload) => {
+                    const newEl = createFileElement(payload.new);
+                    newEl.classList.add('message-animate');
+                    messagesContainer.appendChild(newEl);
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 })
                 .subscribe();
         }
         
+        // ==================== ОТПРАВКА СООБЩЕНИЙ ====================
         document.getElementById('send-message-form').addEventListener('submit', async (e)=>{
             e.preventDefault();
             const content = messageInput.value.trim();
             if (!content || !activeChat) return;
             messageInput.value = '';
             
+            // Создаём временное сообщение с анимацией
             const tempId = 'temp_'+Date.now();
             const tempMsg = { id: tempId, content, created_at: new Date().toISOString(), sender_id: currentUser.id, sender: { nickname: currentProfile.nickname } };
-            const tempEl = appendMessageElement(tempMsg, true);
+            const tempEl = createMessageElement(tempMsg);
+            tempEl.classList.add('message-animate');
+            messagesContainer.appendChild(tempEl);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            pendingMessages.set(tempId, { content, senderId: currentUser.id });
             
             const { error } = await supabase.from('messages').insert({ chat_id: activeChat.id, sender_id: currentUser.id, content });
-            if (error) { tempEl.remove(); displayError('Ошибка отправки', error); }
+            if (error) {
+                tempEl.remove();
+                pendingMessages.delete(tempId);
+                displayError('Ошибка отправки', error);
+            }
         });
         
-        // Загрузка файлов
+        // ==================== ЗАГРУЗКА ФАЙЛОВ ====================
         fileUpload.addEventListener('change', async (e)=>{
             const file = e.target.files[0];
             if (!file) return;
@@ -503,12 +551,15 @@
                 const path = `${activeChat.id}/${currentUser.id}_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g,'_')}`;
                 const { error: upErr } = await supabase.storage.from('chat-files').upload(path, processed);
                 if (upErr) throw upErr;
-                await cacheFile(path, processed);
+                await db?.put('files', processed, path);
                 const { data: fileData } = await supabase.from('files').insert({
                     chat_id: activeChat.id, uploaded_by: currentUser.id, storage_path: path,
                     filename: file.name, size: processed.size, mime_type: processed.type, is_image: processed.type.startsWith('image/')
                 }).select().single();
-                appendFileElement(fileData);
+                
+                const newEl = createFileElement(fileData);
+                newEl.classList.add('message-animate');
+                messagesContainer.appendChild(newEl);
                 messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 uploadStatus.textContent = 'Отправлено';
                 setTimeout(()=> uploadStatus.classList.add('hidden'), 2000);
@@ -518,9 +569,9 @@
         
         function escapeHtml(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
         
-        // Дебаг-консоль
-        window.addEventListener('keydown', (e)=>{ if (e.key === 'd' || e.key === 'D') debugConsole.classList.toggle('hidden'); });
-        document.getElementById('close-debug').addEventListener('click', ()=> debugConsole.classList.add('hidden'));
+        // ==================== ДЕБАГ-КОНСОЛЬ ====================
+        window.addEventListener('keydown', (e)=>{ if (e.key === 'd' || e.key === 'D') document.getElementById('debug-console').classList.toggle('hidden'); });
+        document.getElementById('close-debug').addEventListener('click', ()=> document.getElementById('debug-console').classList.add('hidden'));
         
         // Старт
         checkSession();
