@@ -12,23 +12,22 @@
         * { transition: background-color 0.2s ease, border-color 0.2s ease; }
         .scrollbar-hidden::-webkit-scrollbar { display: none; }
         .scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
-        .theme-transition { transition: all 0.2s ease; }
+        @keyframes slide-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-slide-up { animation: slide-up 0.2s ease-out; }
+        .message-temp { opacity: 0.7; }
     </style>
 </head>
 <body class="font-sans antialiased">
 
 <div id="app" class="h-screen flex overflow-hidden bg-white dark:bg-black text-black dark:text-white">
     
-    <!-- Бургер-кнопка (видна на мобильных/планшетах) -->
+    <!-- Бургер-кнопка -->
     <button id="menu-toggle" class="lg:hidden fixed top-4 left-4 z-30 p-2 rounded-full bg-gray-200 dark:bg-gray-800">
-        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
-        </svg>
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
     
-    <!-- Сайдбар (чаты) -->
-    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 ease-in-out lg:translate-x-0 -translate-x-full">
-        <!-- Заголовок сайдбара -->
+    <!-- Сайдбар -->
+    <div id="sidebar" class="w-80 lg:w-96 bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-800 flex flex-col absolute lg:relative inset-y-0 left-0 z-20 transform transition-transform duration-300 lg:translate-x-0 -translate-x-full">
         <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center justify-between">
             <div>
                 <h2 class="font-semibold text-lg" id="user-nickname-display">Чаты</h2>
@@ -43,17 +42,13 @@
             </div>
         </div>
 
-        <!-- Форма добавления чата -->
         <div class="p-3 border-b border-gray-300 dark:border-gray-800">
             <form id="add-chat-form" class="flex space-x-2">
                 <input type="text" id="new-chat-input" placeholder="Ник или ID" class="flex-1 bg-white dark:bg-black border border-gray-300 dark:border-gray-700 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
-                <button type="submit" id="add-chat-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium hover:opacity-80 transition">
-                    <span>+</span>
-                </button>
+                <button type="submit" id="add-chat-btn" class="bg-black dark:bg-white text-white dark:text-black rounded-full px-4 py-2 text-sm font-medium hover:opacity-80 transition">+</button>
             </form>
         </div>
 
-        <!-- Список чатов -->
         <div class="flex-1 overflow-y-auto scrollbar-hidden p-2">
             <div id="chat-list" class="space-y-1">
                 <div class="text-center opacity-50 py-10">Загрузка...</div>
@@ -61,9 +56,8 @@
         </div>
     </div>
 
-    <!-- Основная область чата -->
+    <!-- Основная область -->
     <div class="flex-1 flex flex-col bg-white dark:bg-black">
-        <!-- Заголовок активного чата -->
         <div class="p-4 border-b border-gray-300 dark:border-gray-800 flex items-center">
             <button id="mobile-back-btn" class="lg:hidden mr-3 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 hidden">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
@@ -74,14 +68,10 @@
             </div>
         </div>
 
-        <!-- Сообщения -->
         <div id="messages-container" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hidden">
-            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">
-                Выберите чат
-            </div>
+            <div id="no-chat-message" class="h-full flex items-center justify-center opacity-50">Выберите чат</div>
         </div>
 
-        <!-- Форма отправки -->
         <div class="p-4 border-t border-gray-300 dark:border-gray-800">
             <form id="send-message-form" class="flex items-center space-x-2">
                 <input type="text" id="message-input" placeholder="Сообщение..." class="flex-1 bg-gray-100 dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-full px-4 py-3 focus:outline-none focus:ring-2 focus:ring-gray-400" autocomplete="off" disabled>
@@ -118,7 +108,7 @@
     </div>
 </div>
 
-<!-- Дебаг-консоль (скрыта, показывается по клавише D) -->
+<!-- Скрытая дебаг-консоль (по D) -->
 <div id="debug-console" class="fixed bottom-4 right-4 w-96 bg-black/90 text-green-400 text-xs font-mono rounded-xl border border-gray-700 shadow-xl z-50 hidden" style="max-height: 300px;">
     <div class="flex justify-between items-center p-2 bg-gray-800 rounded-t-xl">
         <span>Debug</span>
@@ -129,16 +119,17 @@
 
 <script>
     (function(){
-        // Конфигурация
-        const SUPABASE_URL = 'https://visizgpiszvmetydldeo.supabase.co';
+        // ==================== КОНФИГУРАЦИЯ ====================
+        const SUPABASE_URL = 'https://my-proxy-chat.wodaphone1337.workers.dev';
         const SUPABASE_ANON_KEY = 'sb_publishable_MP_XcGnCETIZB-2p6S4gHw_9L4PQCw0';
         const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        // Состояние
-        let currentUser = null, currentProfile = null, activeChat = null, chatsList = [], realtimeChannel = null;
+        // ==================== СОСТОЯНИЕ ====================
+        let currentUser = null, currentProfile = null, activeChat = null, chatsList = [];
+        let realtimeChannel = null, globalRealtimeChannel = null; // для глобальных событий (чаты)
         let isLoginMode = false, db, theme = localStorage.getItem('theme') || 'dark';
         
-        // DOM элементы
+        // ==================== DOM ЭЛЕМЕНТЫ ====================
         const app = document.getElementById('app');
         const authModal = document.getElementById('auth-modal');
         const authForm = document.getElementById('auth-form');
@@ -158,7 +149,7 @@
         const debugConsole = document.getElementById('debug-console');
         const debugContent = document.getElementById('debug-content');
         
-        // Инициализация IndexedDB и темы
+        // ==================== ИНИЦИАЛИЗАЦИЯ ====================
         async function initDB() { db = await idb.openDB('chat-cache', 1, { upgrade(db){ db.createObjectStore('files'); }}); }
         initDB();
         
@@ -170,11 +161,8 @@
         applyTheme(theme);
         themeToggle.addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));
         
-        // Логирование (только в консоль браузера)
-        function log(msg, type='info') { console.log(`[${new Date().toLocaleTimeString()}] ${msg}`); }
+        function log(msg) { console.log(`[${new Date().toLocaleTimeString()}] ${msg}`); }
         function errorLog(msg) { console.error(msg); }
-        
-        // Показ ошибок в модалке
         function displayError(context, err) {
             const msg = err?.message || JSON.stringify(err);
             authError.textContent = `${context}: ${msg}`;
@@ -189,15 +177,13 @@
         }
         menuToggle.addEventListener('click', () => toggleSidebar());
         mobileBackBtn.addEventListener('click', () => toggleSidebar(true));
-        
-        // Закрытие сайдбара при клике вне его (на мобильных)
         document.addEventListener('click', (e) => {
             if (window.innerWidth < 1024 && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
                 sidebar.classList.add('-translate-x-full');
             }
         });
         
-        // Аутентификация
+        // ==================== АУТЕНТИФИКАЦИЯ ====================
         async function checkSession() {
             authTitle.textContent = 'Загрузка...';
             authLoading.classList.remove('hidden');
@@ -233,6 +219,7 @@
             authModal.classList.add('hidden');
             document.getElementById('logout-btn').classList.remove('hidden');
             loadChats();
+            setupGlobalRealtime(); // подписка на новые чаты
         }
         
         document.getElementById('switch-auth-mode').addEventListener('click', ()=>{
@@ -273,7 +260,7 @@
             location.reload();
         });
         
-        // Чаты
+        // ==================== ЧАТЫ (с Realtime) ====================
         async function loadChats() {
             const container = document.getElementById('chat-list');
             container.innerHTML = '<div class="text-center opacity-50 py-10">Загрузка...</div>';
@@ -282,7 +269,7 @@
                 .select(`id, user1_id, user2_id, user1:profiles!chats_user1_id_fkey(nickname), user2:profiles!chats_user2_id_fkey(nickname)`)
                 .or(`user1_id.eq.${currentUser.id},user2_id.eq.${currentUser.id}`)
                 .order('created_at', { ascending: false });
-            if (error) { container.innerHTML = '<div class="text-center text-red-500 py-10">Ошибка</div>'; return; }
+            if (error) { container.innerHTML = '<div class="text-red-500 py-10">Ошибка</div>'; return; }
             chatsList = data || [];
             renderChatList();
         }
@@ -338,7 +325,7 @@
             if (val) createChat(val);
         });
         
-        // Сообщения и Realtime
+        // ==================== СООБЩЕНИЯ И ФАЙЛЫ ====================
         async function selectChat(chatId, otherId, otherNickname) {
             if (realtimeChannel) { supabase.removeChannel(realtimeChannel); realtimeChannel = null; }
             activeChat = { id: chatId, otherUserId: otherId, otherUserNickname: otherNickname };
@@ -365,32 +352,38 @@
         
         function renderAllMessages(messages, files) {
             messagesContainer.innerHTML = '';
-            const items = [...messages.map(m=>({...m, type:'msg'})), ...files.map(f=>({...f, type:'file'}))].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+            const items = [
+                ...messages.map(m=>({...m, type:'msg'})),
+                ...files.map(f=>({...f, type:'file'}))
+            ].sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+            
             if (items.length===0) { messagesContainer.innerHTML = '<div class="text-center opacity-50 py-10">Нет сообщений</div>'; return; }
             items.forEach(item => item.type==='msg' ? appendMessageElement(item) : appendFileElement(item));
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
-        function appendMessageElement(msg) {
+        function appendMessageElement(msg, isTemp = false) {
             const isOwn = msg.sender_id === currentUser.id;
             const time = new Date(msg.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
-            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
+            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'} animate-slide-up`;
             div.dataset.messageId = msg.id;
             div.dataset.content = msg.content;
             div.dataset.senderId = msg.sender_id;
+            if (isTemp) div.classList.add('message-temp');
             div.innerHTML = `<div class="max-w-[80%]">
                 <div class="text-xs opacity-50 mb-1 ${isOwn?'text-right':''}">${msg.sender.nickname} • ${time}</div>
                 <div class="rounded-3xl px-5 py-3 ${isOwn ? 'bg-black dark:bg-white text-white dark:text-black' : 'bg-gray-200 dark:bg-gray-800'}">${escapeHtml(msg.content)}</div>
             </div>`;
             messagesContainer.appendChild(div);
+            return div;
         }
         
         async function appendFileElement(file) {
             const isOwn = file.uploaded_by === currentUser.id;
             const time = new Date(file.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             const div = document.createElement('div');
-            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'}`;
+            div.className = `flex ${isOwn ? 'justify-end' : 'justify-start'} animate-slide-up`;
             div.dataset.fileId = file.id;
             
             let signedUrl = '';
@@ -418,7 +411,6 @@
             </div>`;
             messagesContainer.appendChild(div);
             
-            // Обработчик скачивания (с отметкой просмотра)
             div.querySelector('.download-btn')?.addEventListener('click', async (e)=>{
                 e.stopPropagation();
                 const btn = e.currentTarget;
@@ -432,7 +424,7 @@
                         blob = data;
                         await cacheFile(path, blob);
                     }
-                    // Отмечаем просмотр
+                    // Отмечаем просмотр (это запустит удаление на сервере)
                     await supabase.from('file_views').insert({ file_id: file.id, user_id: currentUser.id });
                     
                     const url = URL.createObjectURL(blob);
@@ -452,12 +444,13 @@
             realtimeChannel = supabase.channel(`chat-${chatId}`)
                 .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`chat_id=eq.${chatId}` }, async (payload)=>{
                     const msg = payload.new;
-                    // Удаляем временное сообщение, если есть
-                    const temps = document.querySelectorAll('[data-message-id^="temp_"]');
-                    temps.forEach(el => { if (el.dataset.senderId === currentUser.id && el.dataset.content === msg.content) el.remove(); });
+                    // Удаляем временное сообщение (плавно)
+                    const temp = document.querySelector(`[data-message-id^="temp_"][data-content="${msg.content}"][data-sender-id="${currentUser.id}"]`);
+                    if (temp) temp.remove();
+                    
                     const { data: sender } = await supabase.from('profiles').select('nickname').eq('id', msg.sender_id).single();
                     msg.sender = sender;
-                    appendMessageElement(msg);
+                    const newMsgEl = appendMessageElement(msg);
                     messagesContainer.scrollTop = messagesContainer.scrollHeight;
                 })
                 .on('postgres_changes', { event:'INSERT', schema:'public', table:'files', filter:`chat_id=eq.${chatId}` }, (payload)=>{
@@ -467,17 +460,32 @@
                 .subscribe();
         }
         
+        function setupGlobalRealtime() {
+            // Подписка на новые чаты, в которых участвует текущий пользователь
+            globalRealtimeChannel = supabase.channel('global-chats')
+                .on('postgres_changes', { event:'INSERT', schema:'public', table:'chats' }, (payload) => {
+                    const newChat = payload.new;
+                    if (newChat.user1_id === currentUser.id || newChat.user2_id === currentUser.id) {
+                        log('Обнаружен новый чат, обновляем список');
+                        loadChats(); // можно добавить только этот чат, но проще перезагрузить
+                    }
+                })
+                .subscribe();
+        }
+        
         document.getElementById('send-message-form').addEventListener('submit', async (e)=>{
             e.preventDefault();
             const content = messageInput.value.trim();
             if (!content || !activeChat) return;
             messageInput.value = '';
+            
             const tempId = 'temp_'+Date.now();
             const tempMsg = { id: tempId, content, created_at: new Date().toISOString(), sender_id: currentUser.id, sender: { nickname: currentProfile.nickname } };
-            appendMessageElement(tempMsg);
+            const tempEl = appendMessageElement(tempMsg, true);
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
             const { error } = await supabase.from('messages').insert({ chat_id: activeChat.id, sender_id: currentUser.id, content });
-            if (error) { document.querySelector(`[data-message-id="${tempId}"]`)?.remove(); displayError('Ошибка отправки', error); }
+            if (error) { tempEl.remove(); displayError('Ошибка отправки', error); }
         });
         
         // Загрузка файлов
@@ -510,7 +518,7 @@
         
         function escapeHtml(t) { const d=document.createElement('div'); d.textContent=t; return d.innerHTML; }
         
-        // Дебаг-консоль по клавише D
+        // Дебаг-консоль
         window.addEventListener('keydown', (e)=>{ if (e.key === 'd' || e.key === 'D') debugConsole.classList.toggle('hidden'); });
         document.getElementById('close-debug').addEventListener('click', ()=> debugConsole.classList.add('hidden'));
         
